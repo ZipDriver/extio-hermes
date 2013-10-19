@@ -1,0 +1,68 @@
+ExtIO for Hermes receiver.
+==========================
+
+Andrea Montefusco IW0HDV
+
+
+1. Installation
+---------------
+
+In order to use this DLL you have to install, as prerequisite, the runtime 
+for Microsoft Visual C++ 2010.
+Please select the proper release (32 or 64 bit), seconding your 
+Windows system requirement.
+
+Next the two shared libraries (.dll extension files provided in this packet) have 
+to be copied in the same directory where the Studio1 executable lives.
+
+In Debug directory you find another shared library, that, though, can be 
+used only if you have the real compiler installed in your machine (it seems 
+that Microsoft explicitly forbids to run an executable with debug info
+in a machine where the compiler is not installed [1]).
+
+
+2. First run
+------------
+
+Start Studio1, if the only ExtIO is the Hermes one, it is automatically selected.
+Next the search for the radio hardware is started: if any hardware is found 
+the MAC and IP address are shown in the upper text box.
+So, press Start and the receivers is activated.
+
+
+3. How to run multiple instances of Studio 1
+--------------------------------------------
+
+In order to exploit the multi receiver capabilities of Hermes receiver, 
+start the first instance: after that select the maximum number of receiver
+you want to use (drop box).
+In order to activate further receivers, start more instances of Studio1 
+and setup them as you prefer.
+If the an instance, after the first, is not started, stop all the Studio1 instances and 
+delete the Studio1 registry offending instance with the following command:
+
+   reg DELETE HKEY_CURRENT_USER\Software\SDR_Applications\Studio1\1.0\AppInst_2
+
+in the above example, the instance delete is the third.
+
+
+4. How to use the Hermes transmitter
+------------------------------------
+
+At the moment it is not feasible to use the Hermes transmitter with this DLL.
+
+
+
+
+
+
+
+
+
+[1] Preparing a Test Machine To Run a Debug Executable,
+    http://msdn.microsoft.com/en-us/library/aa985618(v=vs.90).aspx
+
+
+
+
+

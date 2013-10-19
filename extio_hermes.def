@@ -1,0 +1,51 @@
+﻿LIBRARY		ExtIO_hermes-8.0.dll
+
+SECTIONS
+	.SS_DLLMAIN			READ WRITE SHARED
+	.SS_EXTIO_HERMES	READ WRITE SHARED
+	.SS_HPSDR			READ WRITE SHARED
+;
+; Excerpted from "Winrad ‐ specifications for the external I/O DLL" by Alberto I2PHD
+;
+; To summarize, the only mandatory entry points, those that must be implemented, and whose presence is checked by Winrad, are the following :
+;
+; InitHW 
+; OpenHW
+; CloseHW 
+; StartHW 
+; StopHW
+; SetHWLO
+; GetStatus
+; SetCallback
+;
+; The remaining entry points :
+; GetHWLO 
+; GetHWSR 
+; ShowGUI
+; HideGUI
+; RawDataReady
+; TuneChanged
+; IFLimitsChanged 
+; GetTune 
+; GetMode 
+; GetFilters 
+; ModeChanged
+;
+; are optional, and can be implemented only if needed by the DLL implementer.
+;
+
+EXPORTS
+	InitHW			= _InitHW@12		; mandatory entry points
+	OpenHW			= _OpenHW@0
+	CloseHW			= _CloseHW@0
+	StartHW			= _StartHW@4
+	StopHW			= _StopHW@0
+	SetHWLO			= _SetHWLO@4
+	GetStatus		= _GetStatus@0
+	SetCallback		= _SetCallback@4
+
+	GetHWLO			= _GetHWLO@0		; optional entry points
+	GetHWSR			= _GetHWSR@0
+	ShowGUI			= _ShowGUI@0
+	HideGUI			= _HideGUI@0
+	
