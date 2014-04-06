@@ -1,19 +1,13 @@
 #if !defined	__EXTIO_HERMES_H__
 #define			__EXTIO_HERMES_H__
 
-// The following ifdef block is the standard way of creating macros which make exporting 
-// from a DLL simpler. All files within this DLL are compiled with the EXTIO_HERMES_EXPORTS
-// symbol defined on the command line. this symbol should not be defined on any project
-// that uses this DLL. This way any other project whose source files include this file see 
-// EXTIO_HERMES_API functions as being imported from a DLL, whereas this DLL sees symbols
-// defined with this macro as being exported.
-#ifdef EXTIO_HERMES_EXPORTS
-#define EXTIO_HERMES_API __declspec(dllexport)
-#else
-#define EXTIO_HERMES_API __declspec(dllimport)
-#endif
+#include "Extio_config.h"
 
 
+
+#define EXTIO_API __declspec(dllexport)
+
+// type for Extio callback, used for signallingof data and events to main program
 typedef  void (* EXTIO_RX_CALLBACK) (int, int, float, int *) ;
 
 
@@ -33,11 +27,14 @@ public:
 
 	int receive (unsigned channel, unsigned char *buf, int len) {
 		#if !defined NDEBUG
-		if ( (ni % 256) == 0 ) {LOG (("---------- receive: RX: %d  buflen: %d\n", channel, len)); ni++;}
+		if ( (ni % 4096) == 0 ) { 
+			LOGT("---------- receive: RX: %d  buflen: %d\n", channel, len); 
+			ni++;
+		}
 		ni++;
 		#endif
-		if (len != (NS*2*sizeof(ST::sample_type))) {
-			LOG(("ERROR Callback on channel %d: length: %d (%p): expected:%d received: %d\n", channel, len, *cback, (NS*2*sizeof(ST::sample_type)), len));
+		if (len != (NS*2*sizeof(typename ST::sample_type))) {
+			LOGX("ERROR Callback on channel %d: length: %d (%p): expected:%d received: %d\n", channel, len, *cback, (NS*2*sizeof(typename ST::sample_type)), len);
 		} else
 			(*cback) (NS, 0, 0., (int *) buf );
 		return 0;
@@ -51,147 +48,222 @@ private:
 
 
 
-#include "hpsdr.h"
-
-struct int24 {
-	unsigned char v1;
-	unsigned char v2;
-	unsigned char v3;
-};
-
-template <int v, typename T>
-struct ExtIOtype
-{
-	enum { value = v };
-	typedef T sample_type;
-};
-
-typedef ExtIOtype < 5, int24> ExtIO_int24;
-typedef ExtIOtype < 6, int	> ExtIO_int32;
-typedef ExtIOtype < 7, float> ExtIO_float32;
-
-
+/*
+ * class ExtioDataConversion
+ *
+ * helper class for buffering and conversion of HPSDR samples to Extio formats 
+*/
 template < typename ST >
-class ExtioHermesRadio : public Hermes
+class ExtioDataConversion {
+public:
+	ExtioDataConversion (int _ns):ns(_ns) { pb = new unsigned char[2 * ns * sizeof(typename ST::sample_type)]; }
+	~ExtioDataConversion() { delete [] pb;  }
+	int getNs() { return ns; }
+
+	unsigned char *pb;
+	int ns;
+
+	int convert_iq_from_rx (HpsdrRxIQSample *i, HpsdrRxIQSample *q, ExtIO_int24)
+	{
+		int24 *p = (int24 *)pb;
+		for (int n = 0; n < ns; ++n) {
+			p->v1 = i->s3, p->v2 = i->s2, p->v3 = i->s1; ++p;
+			p->v1 = q->s3, p->v2 = q->s2, p->v3 = q->s1; ++p;
+			++i, ++q;
+		}
+		return 0;
+	}
+
+	int convert_iq_from_rx (HpsdrRxIQSample *i, HpsdrRxIQSample *q, ExtIO_int32)
+	{
+		int *p = (int *)pb;
+		for (int n = 0; n < ns; ++n)
+			*p++ = i->int_32(),
+			*p++ = q->int_32(),
+			++i,
+			++q;
+		return 0;
+	}
+
+	int convert_iq_from_rx (HpsdrRxIQSample *i, HpsdrRxIQSample *q, ExtIO_float32)
+	{
+		float *p = (float *)pb;
+		for (int n = 0; n < ns; ++n)
+			*p++ = i->float_32(),
+			*p++ = q->float_32(),
+			++i,
+			++q;
+		return 0;
+	}
+
+	int convert_iq_from_rx(HpsdrRxIQSample *i, HpsdrRxIQSample *q, ExtIO_int_hpsdr)
+	{
+		int24_hpsdr *p = (int24_hpsdr *)pb;
+		for (int n = 0; n < ns; ++n) {
+			p->v1 = i->s3, p->v2 = i->s2, p->v3 = i->s1; ++p;
+			p->v1 = q->s3, p->v2 = q->s2, p->v3 = q->s1; ++p;
+			++i, ++q;
+		}
+		return 0;
+	}
+
+};
+
+class Gui;
+
+template <typename ST>
+class ExtioHpsdrRadio : public ExtioDataConversion<ST>
 {
 public:
-	ExtioHermesRadio (int ns): Hermes(), ns_(ns), cnt(0), pidc(0)
-	{ pb = new unsigned char [2 * ns * sizeof(ST::sample_type)]; }
+	ExtioHpsdrRadio(int ns, Radio *p, EXTIO_RX_CALLBACK *pCb) : ExtioDataConversion<ST>(ns), cnt(0), pidc(0), pR_(p), pExtioCallback(pCb)
+	{  }
 
-	void setIdllComm (IntraComm *pIdc) { pidc = pIdc; }
+	virtual ~ExtioHpsdrRadio() {}
 
-	void setSampleRate (int new_sr) 
-	{
-		Hermes::setSampleRate (new_sr);
-		if (ExtioCallback) ExtioCallback (-1, 100, 0., 0);
+
+	void setIdllComm(IntraComm *pIdc)
+	{ 
+		pidc = pIdc; 
 	}
 
 	// called when the rx buffer is full
-	int process_iq_from_rx (int nrx, HpsdrRxIQSample *i, HpsdrRxIQSample *q, int ns)
+	int send_iq_from_rx_to_dsp (int nrx, HpsdrRxIQSample *i, HpsdrRxIQSample *q, int ns)
 	{
-		process_iq_from_rx ( ns, i, q, ST() ); // Extio type selection is done at compile type !
-		// send to callback supplier
-		return process_iq_from_rx ( nrx, pb, 2 * ns * sizeof(ST::sample_type));
-	} 
+		// convert and copy raw I/Q data from native HPSDR format to ExtIO format
+		this->convert_iq_from_rx(i, q, ST()); // Extio type selection is done at compile type !
 
-protected:
-	IntraComm *pidc; 
-	int cnt;
-	int ns_;
-	unsigned char *pb;
-
-private:	
-
-	int process_iq_from_rx (int ns, HpsdrRxIQSample *i, HpsdrRxIQSample *q, ExtIO_int24 )
-	{
-		int24 *p = (int *)pb;
-		for (int n = 0; n < ns; ++n) 
-			*p++ = i->s1, *p++ = i->s2, *p++ = i->s3, 
-			*p++ = q->s1, *p++ = q->s2, *p++ = q->s3, 
-			++i, ++q
-		; 
-		return 0;
-	} 
-
-
-	int process_iq_from_rx (int ns, HpsdrRxIQSample *i, HpsdrRxIQSample *q, ExtIO_int32 )
-	{
-		int *p = (int *)pb;
-		for (int n = 0; n < ns; ++n) 
-			*p++ = i->int_32(), 
-			*p++ = q->int_32(), 
-			++i, 
-			++q; 
-		return 0;
-	} 
-
-	int process_iq_from_rx (int ns, HpsdrRxIQSample *i, HpsdrRxIQSample *q, ExtIO_float32 )
-	{
-		float *p = (float *)pb;
-		for (int n = 0; n < ns; ++n) 
-			*p++ = i->float_32(), 
-			*p++ = q->float_32(), 
-			++i, 
-			++q; 
-		return 0;
-	} 
-
-	virtual int process_iq_from_rx (int nrx, unsigned char * b, int nbytes) { 
-		if ( (cnt % 256) == 0 ) {LOG (("---------- RX: %d  buflen: %d\n", nrx, nbytes)); cnt++;}
+		// internal buffers counter
+		//if ((cnt % 1024) == 0) { LOGT("---------- RX: %d  buflen: %d\n", nrx, ns); cnt++; }
 
 		// setup a buffer for ExtIO
-		if (pidc) pidc->send (nrx, b, nbytes);
+		if (pidc) pidc->send(nrx, this->pb, 2 * this->getNs() * sizeof(typename ST::sample_type));
 		cnt++;
-		return 0; 
-	} // called when the rx buffer is full
+		return 0;
+	}
+
+	void setSampleRateHW(int new_sr)
+	{
+		pR_->setSampleRate(new_sr);
+
+		/* 100
+		This status value indicates that a sampling frequency change has taken place,
+		either by a hardware action, or by an interaction of the user with the DLL GUI.
+		When the main program receives this status, it calls immediately after
+		the GetHWSR() API to know the new sampling rate.
+		*/
+		if (*pExtioCallback) (*pExtioCallback) (-1, 100, 0., 0);
+	}
+	Radio * getRadio() { return pR_; }
+
+	virtual Gui *CreateGui(int sr) = 0;
+
+protected:
+	IntraComm *pidc;
+	int cnt;
+	Radio *pR_;
+	EXTIO_RX_CALLBACK *pExtioCallback;
+};
+
+template < typename ST >
+class ExtioMercuryRadio : public Mercury, public ExtioHpsdrRadio<ST>
+{
+public:
+	ExtioMercuryRadio(int ns, EXTIO_RX_CALLBACK *pCb) : Mercury(), ExtioHpsdrRadio<ST>(ns, this, pCb)
+	{  }
+
+	Gui *CreateGui(int sr);
+
+	//
+	// this is a virtual method inherited from Radio base class 
+	// it is called when the rx buffer is full
+	//
+	int process_iq_from_rx(int nrx, HpsdrRxIQSample *i, HpsdrRxIQSample *q, int ns)
+	{
+		return this->send_iq_from_rx_to_dsp(nrx, i, q, ns);
+			//ExtioHpsdrRadio<ST>::send_iq_from_rx_to_dsp(nrx, i, q, ns);
+	}
 };
 
 
-
-#include "log.h"
-#include "gui.h"
-
-class HermesEthernet: public Ethernet {
+template < typename ST >
+class ExtioHermesRadio : public Hermes, public ExtioHpsdrRadio<ST>
+{
 public:
-	HermesEthernet (Gui *p, Flow *pF): Ethernet(pF), pg(p)
-	{}
+	ExtioHermesRadio(int ns, EXTIO_RX_CALLBACK *pCb) : Hermes(), ExtioHpsdrRadio<ST>(ns, this, pCb)
+	{  }
 
-	void FatalError     (const char *pMsg) { pg->SetHw (pMsg); };
-	void TrasmissionTmo (const char *pMsg) { pg->AppendMessage (pMsg); };
+	Gui *CreateGui(int sr);
+
+	//
+	// this is a virtual method inherited from Radio base class
+	// it is called when the rx buffer is full
+	//
+	int process_iq_from_rx(int nrx, HpsdrRxIQSample *i, HpsdrRxIQSample *q, int ns)
+	{
+		return this->send_iq_from_rx_to_dsp(nrx, i, q, ns);
+	}
+};
+
+class Gui;
+
+//
+// redirects to the proper GUI elements all the events coming from HPSDR Flow
+//
+class ExtioEthernet : public Ethernet {
+public:
+	ExtioEthernet(Gui *pg_, Flow *pF) : Ethernet(pF), pg(pg_)
+	{}
+	~ExtioEthernet() {}
+
+	void FatalError(const char *pMsg);
+	void TransmissionTmo(const char *pMsg);
 
 private:
 	Gui *pg;
 };
 
-extern "C" EXTIO_HERMES_API void __stdcall CloseHW();
+#include "ExtIO_config.h"
 
-#include "dllmain.h"
+template <
+	typename EXTIO_BASE_TYPE
+>
+struct RadioFactory {
 
-class ExtIODll: public Dll {
-public:
-	ExtIODll (HMODULE h): Dll(h) {}
-	void ProcessAttach ()
+	ExtioHpsdrRadio<EXTIO_BASE_TYPE> *Create(const char *board_id, unsigned char *buf, EXTIO_RX_CALLBACK *pCb)
 	{
-		// initialize Windows sockets
-		WORD wVersionRequested;
-		WSADATA wsaData;
-		int err;
+		ExtioHpsdrRadio<EXTIO_BASE_TYPE> *pExr = 0;
+		// decides at run time which HW we have 
+		// placement new used, in order to share it among all instances
+		if (strcmp(board_id, "Mercury") == 0 || strcmp(board_id, "Metis") == 0) {
+			pExr = new (buf)ExtioMercuryRadio < EXTIO_BASE_TYPE >(EXTIO_NS, pCb);
+		}
+		else
+		if (strcmp(board_id, "Hermes") == 0) {
+			pExr = new (buf)ExtioHermesRadio < EXTIO_BASE_TYPE >(EXTIO_NS, pCb);
+		}
+		return pExr;
+	}
 
-		wVersionRequested = MAKEWORD(1, 1);
-		err = WSAStartup(wVersionRequested, &wsaData);
-	};
-	void ProcessDetach () { CloseHW(); };
-	void ThreadAttach () {};
-	void ThreadDetach () {};
-private:
+	ExtioHpsdrRadio<EXTIO_BASE_TYPE> *Pointer(const char *board_id, unsigned char *buf)
+	{
+		ExtioHpsdrRadio<EXTIO_BASE_TYPE> *pExr = 0;
+		// decides at run time which HW we have 
+		// placement new used, in order to share it among all instances
+		if (strcmp(board_id, "Mercury") == 0 || strcmp(board_id, "Metis") == 0) {
+			pExr = (ExtioMercuryRadio < EXTIO_BASE_TYPE > *) buf;
+		}
+		else
+		if (strcmp(board_id, "Hermes") == 0) {
+			pExr = (ExtioHermesRadio < EXTIO_BASE_TYPE > *) buf;
+		}
+		return pExr;
+	}
+
 };
 
-DLL_CLASS(ExtIODll,hModule)
-
-typedef ExtIO_int32 EXTIO_BASE_TYPE;
-
-const int EXTIO_DEFAULT_SAMPLE_RATE	= 192000;
-
-const int EXTIO_NS				= 1024;
+template <
+	typename EXTIO_BASE_TYPE
+>
+ExtioHpsdrRadio<EXTIO_BASE_TYPE> * CreateExtioHpsdrRadio(const char *board_id);
 
 #endif

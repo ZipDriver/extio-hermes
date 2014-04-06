@@ -1,3 +1,4 @@
+#define _WIN32_WINNT 0x0501 
 #include <winsock2.h>
 #include <iphlpapi.h>
 #pragma  comment (lib, "ws2_32.lib")
@@ -17,7 +18,7 @@ IntraComm :: IntraComm ()
 	for (int i=0; i < NSOCK; ++i) {
 		iqSocket[i] = socket(PF_INET,SOCK_DGRAM,IPPROTO_UDP);
 		if(iqSocket [i] < 0) {
-			LOG(("create socket failed for iqSocket #%d: %s\n", i, strerror(errno) ));
+			LOGT("create socket failed for iqSocket #%d: %s\n", i, strerror(errno) );
 		}
 
 		struct sockaddr_in daddr;
@@ -27,7 +28,7 @@ IntraComm :: IntraComm ()
 		daddr.sin_port			= htons (portBase+i);
 
 		if ( connect (iqSocket[i], (struct sockaddr*) &daddr, sizeof(daddr)) < 0) {
-			LOG(("connect socket failed for iqSocket #%d: %s\n", i, strerror(errno) ));
+			LOGT("connect socket failed for iqSocket #%d: %s\n", i, strerror(errno));
 		}
 	}
 }
@@ -50,7 +51,7 @@ IntraComm :: ~IntraComm ()
 int IntraComm :: send (unsigned channel, unsigned char *buf, int len)
 {
 	int rc = ::send (iqSocket[channel], (const char *)buf, len, 0);
-	if (rc != len) { LOG(("ERROR writing socket for channel: %d: %s\n", channel, strerror(errno))); }
+	if (rc != len) { LOGT("ERROR writing socket for channel: %d: %s\n", channel, strerror(errno)); }
 	return rc;
 }
 
@@ -67,7 +68,7 @@ int IntraComm :: startReceive ()
 	// create receive socket
 	ss = socket (PF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (ss < 0) {
-        LOG(("create socket failed for server IQ socket: %s\n", strerror (errno) ));
+        LOGT("create socket failed for server IQ socket: %s\n", strerror (errno));
         return -1;
     }
     int reuse = 1;
@@ -81,19 +82,19 @@ int IntraComm :: startReceive ()
     addr.sin_port         = htons (portBase+channel);
 
     if (bind (ss, (struct sockaddr*)&addr, sizeof(addr)) < 0 ) {
-        LOGX("bind socket failed for server IQ socket: %s\n", strerror(errno));
+        LOGT("bind socket failed for server IQ socket: %s\n", strerror(errno));
         return -1;
     } else {
-		LOGX("BOUND on port: %d\n", (portBase+channel) );
+		LOGT("BOUND on port: %d\n", (portBase+channel) );
 	}
 
 	// start a receive thread to get discovery responses
 	int rc = pthread_create ( &receiveTid, NULL, IntraComm :: rxThread, this);
 	if (rc != 0) {
-		LOGX("pthread_create failed: rc=%d\n", rc);
+		LOGT("pthread_create failed: rc=%d\n", rc);
 		return -1;
 	} else {
-		LOGX("%s\n", "thread succcessfully started");
+		LOGT("%s\n", "thread succcessfully started");
 		return 0;
 	}
 	
@@ -111,11 +112,11 @@ void * IntraComm :: rxThread (void *arg)
 	while (1) {
 		int nr = recvfrom ( t->ss, (char*)&buffer, sizeof(buffer), 0, 0, 0);
 		if ( nr < 0 ) {
-			LOGX("recvfrom socket failed: %s\n", strerror(errno));
+			LOGT("recvfrom socket failed: %s\n", strerror(errno));
             break;
         }
 		if ( nr == 0 ) {
-			LOGX("recvfrom socket: %s received\n", "empty buffer");
+			LOGT("recvfrom socket: %s received\n", "empty buffer");
 			break;
         }
 
@@ -124,15 +125,11 @@ void * IntraComm :: rxThread (void *arg)
 			c++;
 			brx += nr;
 		}
-		if ((c % 1024) == 0) {
-			LOG((">>>>>>>>>>>>>>>>> stat: %d %ld %d\n", nr, brx, (brx/nr)));
+		if ((c % 4096) == 0) {
+			LOGT(">>>>>>>>>>>>>>>>> stat: %d %ld %d\n", nr, brx, (brx/nr));
 		}
 	}
 
 	return 0;
 }
 
-//	unsigned channel;
-//	int ss [8];
-
- 

@@ -25,18 +25,103 @@
  */
 
 #include "stdio.h"
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <sys/stat.h>
+#include <algorithm>    // for std::min std::max macros
+
+#include <winsock2.h>
+#include <iphlpapi.h>
+#pragma comment (lib, "ws2_32.lib")
+// Link with Iphlpapi.lib
+#pragma comment(lib, "IPHLPAPI.lib")
+
+#if defined _MSC_VER
+#include <strsafe.h>
+#endif
+
+
+#include "util.h"
+#include "hpsdr.h"
+#include "log.h"
 #include "ExtIO_hermes.h"
+#include "guiutil.h"
+#include "gui.h"
 #include "dllmain.h"
+
+extern "C" EXTIO_API void __stdcall CloseHW();
+
+#include "dllmain.h"
+
+class ExtIODll : public Dll {
+public:
+	ExtIODll(HMODULE h) : Dll(h) {}
+
+	void ProcessAttach()
+	{
+		// initialize Windows sockets
+		WORD wVersionRequested;
+		WSADATA wsaData;
+		int err;
+
+		wVersionRequested = MAKEWORD(1, 1);
+		err = WSAStartup(wVersionRequested, &wsaData);
+
+	};
+	void ProcessDetach() { CloseHW(); };
+	void ThreadAttach() {};
+	void ThreadDetach() {};
+private:
+};
+
+
+template < typename ST >
+Gui * ExtioMercuryRadio<ST>::CreateGui(int sr)
+{
+	return new MercuryGui(sr);
+}
+
+template < typename ST >
+Gui * ExtioHermesRadio<ST>::CreateGui(int sr)
+{
+	return new HermesGui(sr);
+}
+
+
+void ExtioEthernet::FatalError(const char *pMsg) 
+{ 
+	LOGT("%s\n", "**************");
+
+	if (pg) {
+		pg->setHw(pMsg);
+	} else {
+		LOGT("%s\n", "NO GUI");
+	}
+};
+
+void ExtioEthernet::TransmissionTmo(const char *pMsg) 
+{ 
+	LOGT("%s\n", "**************");
+
+	if (pg) {
+		pg->setHw(pMsg);
+	} else {
+		LOGT("%s\n", "NO GUI");
+	}
+};
+
 
 //
 // Globals
 //
+DLL_CLASS(ExtIODll, hModule)
 
 #pragma data_seg (".SS_EXTIO_HERMES")
 
-// !!!! have to be initialized due to shared segments rules constraints
-char bufHR [sizeof(ExtioHermesRadio < EXTIO_BASE_TYPE >)]	= { 0 };
-char bufHE [sizeof(HermesEthernet)]							= { 0 };
+// !!!! have to be initialized vars, due to shared segments rules constraints
+unsigned char bufHR[ MAX(sizeof(ExtioMercuryRadio < EXTIO_BASE_TYPE>), sizeof(ExtioMercuryRadio < EXTIO_BASE_TYPE >)) ] = { 0 };
+char bufHE [sizeof(ExtioEthernet)]							= { 0 };
 
 #pragma data_seg ()
 
@@ -45,216 +130,299 @@ IdllComm < EXTIO_BASE_TYPE, EXTIO_NS > *rxIQ = 0;
 
 EXTIO_RX_CALLBACK ExtioCallback = 0;
 
-HermesEthernet *pHermesEth = 0;
 
+// pointers to abstract types
+Radio  *pR = 0;
+ExtioHpsdrRadio < EXTIO_BASE_TYPE > *pExr = 0;
 Gui *pGui = 0;
+HpsdrSplash *pSplash = 0;
 
-ExtioHermesRadio < EXTIO_BASE_TYPE > *pHermes = 0;
+ExtioEthernet *pExtioEth = 0;
+
+
+//
+// Radio Factory Helper
+//
+template <
+	typename EXTIO_BASE_TYPE
+>
+ExtioHpsdrRadio<EXTIO_BASE_TYPE> * CreateExtioHpsdrRadio (const char *board_id)
+{
+	RadioFactory<EXTIO_BASE_TYPE> rf;
+
+	return rf.Create(board_id, bufHR, &ExtioCallback);
+}
+
+//
+// discovery thread helper
+//
+pthread_t scan_thread_id;
+
+void *scan_dev_thread(void *p)
+{
+	HpsdrSplash *pSplash = (HpsdrSplash *)p; // create and start Splash screen
+
+	LOGT("%s\n", "Starting radio scan");
+
+	Ethernet::scan_devices (pSplash);
+
+	return 0;
+}
+
+
 
 extern "C"
-EXTIO_HERMES_API bool __stdcall InitHW(char *name, char *model, int & extio_type)
+EXTIO_API bool __stdcall InitHW(char *name, char *model, int & extio_type)
 {
-	LOG_OPEN ("hermes");
-	LOG (("opened in InitHW(): %d\n", GetInstanceNumber() )) ;
+	LOGT ("Instance #%d\n", GetInstanceNumber() ) ;
 
 	static bool first = true;
 	EXTIO_BASE_TYPE extio_type_;
-	Ethernet::Device *pDev = 0;
 
 	extio_type = extio_type_.value;
 
 	if (first) {
-		if ( GetInstanceNumber() == 1 ) {
+		if (GetInstanceNumber() == 1) {
 			first = false;
 			ExtioCallback = NULL;
 
-			pGui = new Gui (EXTIO_DEFAULT_SAMPLE_RATE);
-			if (pHermesEth == 0) {
-				// placement new used, in order to share it among all instances
-				pHermes = new (bufHR) ExtioHermesRadio < EXTIO_BASE_TYPE > (EXTIO_NS);
+			pSplash = new HpsdrSplash(&pGui);
 
-				if (pHermes != 0) {
-					pGui->setRadio (pHermes);
-					pHermes->setSampleRate (EXTIO_DEFAULT_SAMPLE_RATE);
-				}
-				Flow *pFlow = new Flow (pHermes);
-				pHermesEth = new HermesEthernet (pGui, pFlow);
+			int rc = pthread_create(&scan_thread_id, NULL, scan_dev_thread, (void *)pSplash);
+			if (rc != 0) {
+				LOGT("pthread_create failed on scan device thread: rc=%d\n", rc);
+				return 0;
 			}
-			Ethernet::scan_devices ();
-	
-			pDev = pHermesEth->found();
-			//rc = HermesInit (DEFAULT_SAMPLE_RATE, pHermes);
-			//	TextModeEthernet *pEth = new TextModeEthernet (pFlow);
-			if (pDev != 0) {
-				LOG (("HARDWARE FOUND !\n"));
-				pGui->HermesSetHwAddressGUI (pDev);
-			} else {
-				LOG (("HARDWARE NOT FOUND !\n"));
-				pGui->HermesSetHwAddressGUI (0);
+			else {
+				LOGT("%s\n", "scan device thread: thread succcessfully started");
 			}
-		} else {
-			pHermesEth = (HermesEthernet *) bufHE;
-			pDev = pHermesEth->found();
-			// point local hermes radio object pointer to shared buffer
-			pHermes = (ExtioHermesRadio < EXTIO_BASE_TYPE > *) bufHR;
 		}
 	}
-	if (pDev != 0) {
-		LOG(("Radio in use: %s %s %1.1f\n", pDev->ip_address, pDev->mac_address, ((float)pDev->code_version)/10.0f ));
-		strcpy(name, "HPSDR");
-		strcpy(model, "Hermes");
-	} else {
-		strcpy(name, "HARDWARE NOT OPERATING !!!");
-		strcpy(model, "N/A");
-	}
-	LOG (("INSTANCE: %d Name: [%s] Model: [%s]\n", GetInstanceNumber(), name, model));
-	return (pDev != 0);
-}
-
-extern "C"
-EXTIO_HERMES_API bool __stdcall OpenHW()
-{
-	LOG (("OpenHW() called: #%d\n", GetInstanceNumber()));
-	if ( GetInstanceNumber() == 1 ) pGui->Show ();
+	strcpy(name, "HPSDR");
+	strcpy(model, "unknown" /*pDev->board_id */ );
 	return true;
 }
 
 extern "C"
-EXTIO_HERMES_API int __stdcall StartHW(long LOfrequency)
+EXTIO_API bool __stdcall OpenHW()
 {
-	LOG (("StartHW() called with LOfreq: %d\n", LOfrequency));
-
-	if ( GetInstanceNumber() == 1 ) {
-		
-		if (!pHermesEth->found()) return 0;
-
-		int act_sr;
-		pHermes->getSampleRate(act_sr);
-		LOG (("StartHW() before starting receive: SAMPLE RATE; %d #rx: %d\n", act_sr, pGui->getRecNumber()));
-
-		pHermes->setNumberOfRx (pGui->getRecNumber());
-
-		pHermesEth->startReceive (pHermesEth->found());
-
-		pHermes->setFrequency ( LOfrequency ) ;
-
-		// not anymore necessary, already done in InitHW
-		// pGui->HermesSetHwAddressGUI ( pHermesEth->found() );
+	LOGT("Instance #%d\n", GetInstanceNumber());
+	if (GetInstanceNumber() == 1) {
+		if (pSplash) pSplash->Show();
+		if (pGui) pGui->Show();
 	}
-	
+	return true;
+}
+
+extern "C"
+EXTIO_API int __stdcall StartHW(long LOfrequency)
+{
+	LOGT("Instance #%d LOfreq: %d\n", GetInstanceNumber(), LOfrequency);
+	Ethernet::Device *pDev = 0;
+
+	if (GetInstanceNumber() == 1) {
+
+		if (!Ethernet::found()) {
+			// signals to user that no proper hardware has been found
+			GuiError x("No hardware found, unable to start receiver !");
+			if (pSplash) pSplash->Hide();
+			x.show();
+			if (pSplash) pSplash->SetStatus("%s", (const char*)x), pSplash->Show();
+			// return 0 is an error to the main program, hence the DSP processing is not started at all
+			return 0;
+		} else {
+			pSplash->Hide();
+		}
+
+		if (pDev = Ethernet::found (pSplash->GetSel()) ) {
+
+#if 0
+			if (!pGui) {
+				LOGT("BOARD ID creating gui: [%s]\n", pDev->board_id);
+				// decides at run time which HW we have 
+				pGui = Gui::Create(pDev->board_id, EXTIO_DEFAULT_SAMPLE_RATE);
+				if (pGui == 0) {
+					static const char *msg = "Hardware unsupported, unable to start receiver !";
+					ShowError(msg);
+					return 0;
+				}
+			}
+#endif
+			if (pR == 0) {
+
+				if (pGui) {
+					// Gui and Radio already created in the Splash screen
+					// only globals to be initialized
+					pExr = pGui->getRadio();
+					pR = pExr->getRadio();
+				} else {
+					// Create radio according to type discovered
+					pExr = CreateExtioHpsdrRadio<EXTIO_BASE_TYPE>(pDev->board_id);
+
+					if (!pExr) {
+						GuiError("Hardware unsupported, unable to start receiver !").show();
+						//ShowError(msg);
+						return 0;
+					} else {
+						pR = pExr->getRadio(); // global pointer to Radio
+
+						// create Gui and setup it
+						pGui = pExr->CreateGui(EXTIO_DEFAULT_SAMPLE_RATE);
+						pGui->setRadio(pExr);
+					}
+				}
+
+				// The following call is really needed, in order to setup the samplerate
+				pExr->setSampleRateHW(EXTIO_DEFAULT_SAMPLE_RATE);
+
+				// create an Hpsdr flow object and assign to the Ethernet object
+				Flow *pFlow = new Flow(pR);
+				pExtioEth = new ExtioEthernet(pGui, pFlow);
+			}
+
+			pGui->setHwAddressGUI(pDev); // set the device pointer to gui
+			pGui->Show();				 // and shows it
+		}
+		// here we have the receiver object created (pR != 0) 
+		int act_sr;
+		pR->getSampleRate(act_sr);
+		LOGT("StartHW() before starting receive: SAMPLE RATE; %d #rx: %d\n", act_sr, pGui->getRecNumber());
+
+		pR->setNumberOfRx(pGui->getRecNumber());// before the real receivers are started, 
+												// we have to select how many receivers are to be used
+
+		pExtioEth->startReceive(pExtioEth->found()); // finally, start the receiver(s)
+
+		pR->setFrequency(LOfrequency); // establish the frequency
+
+	} else {
+		pExtioEth = (ExtioEthernet *)bufHE;
+		pDev = pExtioEth->found();
+		// point local hermes radio object pointer to shared buffer
+		RadioFactory<EXTIO_BASE_TYPE> rf;
+		pExr = rf.Pointer (pDev->board_id, bufHR);
+		if (pExr) pR = pExr->getRadio();
+	}
+
+
 	//
 	// all instances, even the first one, have to prepare to receive data from the main one
 	//
-	rxIQ = new IdllComm < EXTIO_BASE_TYPE, EXTIO_NS > (GetInstanceNumber() - 1, &ExtioCallback);
+	rxIQ = new IdllComm < EXTIO_BASE_TYPE, EXTIO_NS >(GetInstanceNumber() - 1, &ExtioCallback);
 
 	if (rxIQ) {
-		rxIQ->startReceive ();
+		rxIQ->startReceive();
+		LOGT("%s\n", "OK: rxIQ created !");
 	} else {
-		LOG (("FATAL: rxIQ not created !\n"));
+		LOGT("%s\n", "FATAL: rxIQ not created !");
 	}
 
-	if ( GetInstanceNumber() == 1 ) {
+	if (GetInstanceNumber() == 1) {
 		// in first instance setup the internal data sender
-		pHermes->setIdllComm (new IntraComm());
+		pExr->setIdllComm(new IntraComm());
+		pGui->EnableControls();
 	} else {
 		//
-		// needed in order to set callback !!!
-		//
-		//pHermes->setSampleRate (EXTIO_DEFAULT_SAMPLE_RATE);
-	}
+		// needed in order to set ExtIO callback !!!
+		// 
+		pExr->setSampleRateHW(EXTIO_DEFAULT_SAMPLE_RATE);
 
-	// signal to the main instance that we have to increase the number of active receivers
-	//pHermes->setNumberOfRx ( GetInstanceNumber() );
+		// signal to the main instance that we have to increase the number of active receivers
+		pR->setNumberOfRx(GetInstanceNumber());
+	}
 	
 	return EXTIO_NS; // # of samples returned by callback
 }
 
 extern "C"
-EXTIO_HERMES_API int __stdcall GetStatus()
+EXTIO_API int __stdcall GetStatus()
 {
-	LOG (("GetStatus() called\n"));
-	
+	LOGT("Instance #%d\n", GetInstanceNumber());
+
 	return 0;
 }
 
 extern "C"
-EXTIO_HERMES_API void __stdcall StopHW()
+EXTIO_API void __stdcall StopHW()
 {
-	LOG (("StopHW() called\n"));
-	if ( GetInstanceNumber() == 1 ) {
-		pGui->AppendMessage (_strdup("Hardware stopped by user request.\n"));
-		pHermesEth->stopReceive ();
+	LOGT("Instance #%d\n", GetInstanceNumber());
+
+	if (GetInstanceNumber() == 1) {
+		pGui->appendMessage ("Hardware stopped by user request.\n");
+		pExtioEth->stopReceive ();
+		pGui->setHwAddressGUI(Ethernet::found(pSplash->GetSel())); // set the device pointer to gui
 	}
 	return;
 }
 
 extern "C"
-EXTIO_HERMES_API void __stdcall CloseHW()
+EXTIO_API void __stdcall CloseHW()
 {
-	LOG (("CloseHW() called\n"));
-	if ( GetInstanceNumber() == 1 ) delete pGui;
+	LOGT("Instance #%d\n", GetInstanceNumber());
+	if ( GetInstanceNumber() == 1 ) delete pGui, delete pSplash;
 	LOG_CLOSE;
 	return;
 }
 
 extern "C"
-EXTIO_HERMES_API int __stdcall SetHWLO(long freq)
+EXTIO_API int __stdcall SetHWLO(long freq)
 {
-	LOG (("SetHWLO() called with freq: %d\n", freq));
+	LOGT("Instance #%d freq: %d (%p)\n", GetInstanceNumber(), freq, pR);
 	
 	if (freq < 10000) return -10000;
 	if (freq > 60000000) return 60000000;
-	pHermes->setFrequency ( freq, GetInstanceNumber() - 1 ) ;
+	if (pR) pR->setFrequency ( freq, GetInstanceNumber() - 1 ) ;
 	return 0;
 }
 
 extern "C"
-EXTIO_HERMES_API long __stdcall GetHWLO()
+EXTIO_API long __stdcall GetHWLO()
 {
+	LOGT("Instance #%d\n", GetInstanceNumber());
 	long LOfreq;
-	pHermes->getFrequency (LOfreq, GetInstanceNumber() - 1 );
-	LOG (("GetHWLO() called: return LOfreq: %d\n", LOfreq));
-
+	if (pR) pR->getFrequency(LOfreq, GetInstanceNumber() - 1);
+	LOGT("   return LOfreq: %d\n", LOfreq);
 	return LOfreq;
 }
 
 extern "C"
-EXTIO_HERMES_API long __stdcall GetHWSR()
+EXTIO_API long __stdcall GetHWSR()
 {
-	int sr;
-	pHermes->getSampleRate (sr);
-	LOG (("GetHWSR() called: return: %d\n", sr));
+	LOGT("Instance #%d\n", GetInstanceNumber());
+	int sr = EXTIO_DEFAULT_SAMPLE_RATE;
+	LOGT("   return: %d\n", sr);
+	if (pR) pR->getSampleRate(sr);
 	return sr;
 }
 
 extern "C"
-EXTIO_HERMES_API void __stdcall SetCallback (EXTIO_RX_CALLBACK parentCallBack)
+EXTIO_API void __stdcall SetCallback (EXTIO_RX_CALLBACK parentCallBack)
 {
-	LOG (("SetCallback() called [%p]\n", parentCallBack));
-
+	LOGT("Instance #%d\n", GetInstanceNumber());
 	ExtioCallback = parentCallBack;
-
 	return;
 }
 
 extern "C"
-EXTIO_HERMES_API void __stdcall ShowGUI()
+EXTIO_API void __stdcall ShowGUI()
 {
-	LOG(("ShowGUI() called\n"));
+	LOGT("Instance #%d\n", GetInstanceNumber());
 
 	if ( GetInstanceNumber() == 1 ) {
-		pGui->Show ();
+		if (pSplash) pSplash->Show();
+		if (pGui) pGui->Show ();
 	}
 	return;
 }
 
 extern "C"
-EXTIO_HERMES_API void __stdcall HideGUI()
+EXTIO_API void __stdcall HideGUI()
 {
-	LOG(("HideGUI() called\n"));
-	
+	LOGT("Instance #%d\n", GetInstanceNumber());
+
 	if ( GetInstanceNumber() == 1 ) {
-		pGui->Hide ();
+		if (pGui) pGui->Hide ();
+		if (pSplash) pSplash->Hide();
 	}
 	return;
 }

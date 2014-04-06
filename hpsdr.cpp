@@ -22,16 +22,30 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
  * 
+ * g++  -std=c++11 -Ic:\MinGW\include -I. -DNDEBUG hpsdr.cpp
  */
 
-#include "hpsdr.h"
-#include <stdlib.h>
+ 
 #include <stdio.h>
-#include <strsafe.h>
+#include <stdlib.h>
 #include <string.h>
 #include <errno.h>
-#include "log.h"
+#include <sys/stat.h>
+
+#include <winsock2.h>
+#include <iphlpapi.h>
+#pragma comment (lib, "ws2_32.lib")
+// Link with Iphlpapi.lib
+#pragma comment(lib, "IPHLPAPI.lib")
+
+#if defined _MSC_VER
+#include <strsafe.h>
+#endif
+
+
 #include "util.h"
+#include "hpsdr.h"
+#include "log.h"
 
 //
 // Ethernet class data
@@ -42,8 +56,6 @@ struct Ethernet::NetInterface Ethernet :: interfaces[MAX_INTERFACES] = {0};
 int Ethernet :: nif   = 0;
 int Ethernet :: dev_found = 0;
 #pragma data_seg ()
-
-#define ARRAY_SIZE(x) ((sizeof(x))/(sizeof(x[0])))
 
 struct Ethernet::Device * Ethernet :: search_dev_by_ip (const char * ip)
 {
@@ -68,9 +80,14 @@ std::list < struct Ethernet::Device > Ethernet :: getDeviceList ()
 	return dl;
 }
 
-struct Ethernet::Device * Ethernet :: found ()
+struct Ethernet::Device * Ethernet :: found (int n)
 {
-	if (dev_found) return &devs[0];
+	if (dev_found) {
+		if (n < dev_found)
+			return &devs[dev_found-1];
+		else
+			return &devs[0];
+	}
 	return 0;
 }
 
@@ -80,6 +97,10 @@ struct Ethernet::Device * Ethernet :: found ()
 
 #define WORKING_BUFFER_SIZE 15000
 #define MAX_TRIES 3
+
+//
+// http://www.winsocketdotnetworkprogramming.com/winsock2programming/winsock2advancediphelperfunction13i.html
+//
 
 int Ethernet :: scan_interface (int /* x */, char * /* ifName */  )
 {
@@ -117,10 +138,10 @@ int Ethernet :: scan_interface (int /* x */, char * /* ifName */  )
 
     family = AF_INET; // IP v4 only !
 
-	LOG(("Calling GetAdaptersAddresses function with family = \n"));
-	if (family == AF_INET) {LOG(("AF_INET\n"));}
-    if (family == AF_INET6) {LOG(("AF_INET6\n"));}
-    if (family == AF_UNSPEC) {LOG(("AF_UNSPEC\n"));}
+	LOGT("%s", "Calling GetAdaptersAddresses function with family = ");
+	if (family == AF_INET) {LOGT("%s\n", "AF_INET");}
+    if (family == AF_INET6) {LOGT("%s\n", "AF_INET6");}
+    if (family == AF_UNSPEC) {LOGT("%s\n", "AF_UNSPEC");}
 
     // Allocate a 15 KB buffer to start with.
     outBufLen = WORKING_BUFFER_SIZE;
@@ -129,7 +150,7 @@ int Ethernet :: scan_interface (int /* x */, char * /* ifName */  )
 
         pAddresses = (IP_ADAPTER_ADDRESSES *) malloc(outBufLen);
         if (pAddresses == NULL) {
-            LOG(("Memory allocation failed for IP_ADAPTER_ADDRESSES struct\n"));
+            LOGT("%s\n", "Memory allocation failed for IP_ADAPTER_ADDRESSES struct");
             return 0;
         }
 
@@ -149,52 +170,72 @@ int Ethernet :: scan_interface (int /* x */, char * /* ifName */  )
     if (dwRetVal == NO_ERROR) {
         // If successful, output some information from the data we received
         pCurrAddresses = pAddresses;
-        while (pCurrAddresses && !found_interface) {
-            LOGX("Length of the IP_ADAPTER_ADDRESS struct: %ld\n",
-                   pCurrAddresses->Length);
-            LOGX("IfIndex (IPv4 interface): %u\n", pCurrAddresses->IfIndex);
-            LOGX("Adapter name: %s\n", pCurrAddresses->AdapterName);
-			LOGX("Friendly name: %wS\n", pCurrAddresses->FriendlyName);
-            pUnicast = pCurrAddresses->FirstUnicastAddress;
-            if (pUnicast != NULL) {
-                LOGX("ADDRESS: %s\n",  inet_ntoa ( ((struct sockaddr_in *)(pUnicast->Address.lpSockaddr))->sin_addr ) );
+		while (pCurrAddresses && !found_interface) {
+			LOGT("Length of the IP_ADAPTER_ADDRESS struct: %ld\n",
+				pCurrAddresses->Length);
+			LOGT("IfIndex (IPv4 interface): %u\n", pCurrAddresses->IfIndex);
+			LOGT("Adapter name: %s\n", pCurrAddresses->AdapterName);
+			LOGT("Friendly name: %wS\n", pCurrAddresses->FriendlyName);
+			pUnicast = pCurrAddresses->FirstUnicastAddress;
+			if (pUnicast != NULL) {
+				LOGT("ADDRESS: %s\n", inet_ntoa(((struct sockaddr_in *)(pUnicast->Address.lpSockaddr))->sin_addr));
 #if 0
 				if ((!wcscmp(pCurrAddresses->FriendlyName, L"Ethernet"))
-					 &&
+					&&
 					(strcmp(inet_ntoa ( ((struct sockaddr_in *)(pUnicast->Address.lpSockaddr))->sin_addr ), "127.0.0.1") != 0)) found_interface = 1;
 #endif
-				memcpy (&(interfaces[nif].b_ip_address), &(((struct sockaddr_in *)(pUnicast->Address.lpSockaddr))->sin_addr ), sizeof(struct in_addr) );
-				strcpy (interfaces[nif].ip_address,  inet_ntoa ( ((struct sockaddr_in *)(pUnicast->Address.lpSockaddr))->sin_addr ) );
+				memcpy(&(interfaces[nif].b_ip_address), &(((struct sockaddr_in *)(pUnicast->Address.lpSockaddr))->sin_addr), sizeof(struct in_addr));
+				strcpy(interfaces[nif].ip_address, inet_ntoa(((struct sockaddr_in *)(pUnicast->Address.lpSockaddr))->sin_addr));
 				for (i = 0; pUnicast != NULL; i++)
-                    pUnicast = pUnicast->Next;
-                LOGX("Number of Unicast Addresses: %d\n", i);
-            } else {
-                LOGX("%s", "No Unicast Addresses\n");
+					pUnicast = pUnicast->Next;
+				LOGT("Number of Unicast Addresses: %d\n", i);
+			}
+			else {
+				LOGT("%s", "No Unicast Addresses\n");
 			}
 
-            if (pCurrAddresses->PhysicalAddressLength != 0) {
+			if (pCurrAddresses->PhysicalAddressLength != 0) {
 
-			    for(i=0;i<6;i++) interfaces[nif].hw_address[i]=pCurrAddresses->PhysicalAddress[i];
+				for (i = 0; i < 6; i++) interfaces[nif].hw_address[i] = pCurrAddresses->PhysicalAddress[i];
 
-				LOG(("Physical address: %02X-%02X-%02X-%02X-%02X-%02X\n", (interfaces[nif].hw_address[0]) & 0xFF,  (interfaces[nif].hw_address[1]) & 0xFF, (interfaces[nif].hw_address[2]) & 0xFF,
-					 (interfaces[nif].hw_address[3]) & 0xFF, (interfaces[nif].hw_address[4]) & 0xFF, (interfaces[nif].hw_address[5]) & 0xFF
-					));
-            }
-			LOGX("Friendly name: [%wS]\n", pCurrAddresses->FriendlyName);
+				LOGT("Physical address: %02X-%02X-%02X-%02X-%02X-%02X\n", (interfaces[nif].hw_address[0]) & 0xFF, (interfaces[nif].hw_address[1]) & 0xFF, (interfaces[nif].hw_address[2]) & 0xFF,
+					(interfaces[nif].hw_address[3]) & 0xFF, (interfaces[nif].hw_address[4]) & 0xFF, (interfaces[nif].hw_address[5]) & 0xFF
+					);
+			}
+			LOGT("Friendly name: [%wS]\n", pCurrAddresses->FriendlyName);
+			#if defined _MSC_VER
 			{
 				// Convert to a char*
 				size_t origsize = wcslen(pCurrAddresses->FriendlyName) + 1;
-                const size_t newsize = sizeof (interfaces[nif].name);
+				const size_t newsize = sizeof (interfaces[nif].name);
 				size_t convertedChars = 0;
 				wcstombs_s(&convertedChars, interfaces[nif].name, wcslen(pCurrAddresses->FriendlyName) + 1, pCurrAddresses->FriendlyName, _TRUNCATE);
-    		}
+			}
+			#else 
+			#if defined __MINGW32__
+			{
+				// Convert to a char*
+				size_t origsize = wcslen(pCurrAddresses->FriendlyName) + 1;
+				//const size_t newsize = sizeof (interfaces[nif].name);
+				//size_t convertedChars = 0;
+				wcstombs(interfaces[nif].name, pCurrAddresses->FriendlyName, origsize);
+			}
+			//strcpy (interfaces[nif].name, "N/A");
+			#endif
+			#endif
+			LOGT("Status: %d\n", pCurrAddresses->OperStatus);
+			{
+				interfaces[nif].status = pCurrAddresses->OperStatus;
+			}
+
 			nif++;
 			pCurrAddresses = pCurrAddresses->Next;
         }
+	
     } else {
-        LOGX("Call to GetAdaptersAddresses failed with error: %d\n", dwRetVal);
+        LOGT("Call to GetAdaptersAddresses failed with error: %d\n", dwRetVal);
         if (dwRetVal == ERROR_NO_DATA)
-            LOGX("%s", "No addresses were found for the requested parameters\n");
+            LOGT("%s", "No addresses were found for the requested parameters\n");
         else {
 
             if (FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER |
@@ -202,7 +243,7 @@ int Ethernet :: scan_interface (int /* x */, char * /* ifName */  )
                     NULL, dwRetVal, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),   
                     // Default language
                     (LPTSTR) & lpMsgBuf, 0, NULL)) {
-                LOGX("Error: %s", lpMsgBuf);
+                LOGT("Error: %s", lpMsgBuf);
                 LocalFree(lpMsgBuf);
                 if (pAddresses)
                     free(pAddresses);
@@ -222,7 +263,7 @@ int Ethernet :: scan_interface (int /* x */, char * /* ifName */  )
 #define DISCOVERY_RECEIVE_PORT PORT
 #define DATA_PORT PORT
 
-bool Ethernet :: scan_devices ()   // was discover()
+bool Ethernet :: scan_devices (ScanWatcher *psw)   // was discover()
 {
     int rc;
     int i;
@@ -231,8 +272,8 @@ bool Ethernet :: scan_devices ()   // was discover()
 	static int data_addr_length;
 	static unsigned char buffer[70];
 
- 
-    LOGX("%s\n", "Looking for Metis card on all interfaces");
+	psw->ScanStarted();
+    LOGT("%s\n", "Looking for Metis/Hermes/Angelia card on all interfaces");
 
 //    discovering=1;
 	
@@ -241,21 +282,27 @@ bool Ethernet :: scan_devices ()   // was discover()
 
 		for (int n=0; n < nif; n++) {
 
-			LOG(("Interface [%s]: IP Address: %s\n", interfaces[n].name, interfaces[n].ip_address));
+			LOGT("Interface [%s]: IP Address: %s STATUS: %d\n", interfaces[n].name, interfaces[n].ip_address, interfaces[n].status);
 
-            LOG(("MAC Address: %02x:%02x:%02x:%02x:%02x:%02x\n",
+            LOGT("MAC Address: %02x:%02x:%02x:%02x:%02x:%02x\n",
                 interfaces[n].hw_address[0]&0xFF, interfaces[n].hw_address[1]&0xFF, interfaces[n].hw_address[2]&0xFF, 
-				interfaces[n].hw_address[3]&0xFF, interfaces[n].hw_address[4]&0xFF, interfaces[n].hw_address[5]&0xFF ));
+				interfaces[n].hw_address[3]&0xFF, interfaces[n].hw_address[4]&0xFF, interfaces[n].hw_address[5]&0xFF );
+
+			psw->InterfaceFound(&(interfaces[n]));
 
 			// bind to this interface
-
 		    struct sockaddr_in name = {0} ;
+			if (interfaces[n].status != IfOperStatusUp) { 
+				LOGT("INOPERATIVE: Interface [%s]: IP Address: %s\n", interfaces[n].name, interfaces[n].ip_address);
+				continue;
+			}
+
 			struct sockaddr_in discovery_addr = {0} ;
             int discovery_length = 0 ;
 
 			interfaces[n].d_socket = socket (PF_INET, SOCK_DGRAM, IPPROTO_UDP);
 			if (interfaces[n].d_socket < 0) {
-				LOGX("create socket failed for d_socket %s\n", strerror(errno));
+				LOGT("create socket failed for d_socket %s\n", strerror(errno));
 				continue;
 			}
 
@@ -269,13 +316,13 @@ bool Ethernet :: scan_devices ()   // was discover()
 			int broadcast = 1;
 			rc = setsockopt (interfaces[n].d_socket, SOL_SOCKET, SO_BROADCAST, (const char *)&broadcast, sizeof(broadcast));
 			if(rc != 0) {
-				LOGX("cannot set SO_BROADCAST: rc=%d\n", rc);
+				LOGT("cannot set SO_BROADCAST: rc=%d\n", rc);
 				return false;
 			}
-			int rcv_tmo = 10;
+			int rcv_tmo = 10;   // reading answers with 10 ms timeout
 			rc = setsockopt (interfaces[n].d_socket, SOL_SOCKET, SO_RCVTIMEO, (const char *)&rcv_tmo, sizeof(int));
 			if ( rc == SOCKET_ERROR ) {
-                LOGX("setsockopt SO_RCVTIMEO failed! [%s]\n", strerror(errno));
+                LOGT("setsockopt SO_RCVTIMEO failed! [%s]\n", strerror(errno));
 			}
 
 			discovery_length=sizeof(discovery_addr);
@@ -284,7 +331,7 @@ bool Ethernet :: scan_devices ()   // was discover()
 			discovery_addr.sin_port=htons(DISCOVERY_SEND_PORT);
 			discovery_addr.sin_addr.s_addr=htonl(INADDR_BROADCAST);
 
-			for (int x=0; x<5; ++x) {
+			for (int x=0; x<1; ++x) {  // two attempts only !!!!!
 				// broadcast the discovery message 
 				buffer[0]=0xEF;
 				buffer[1]=0xFE;
@@ -292,14 +339,14 @@ bool Ethernet :: scan_devices ()   // was discover()
 				for (i=0; i<60; i++) buffer[i+3]=0x00;
 
 				if (sendto(interfaces[n].d_socket, (const char *)buffer,63,0,(struct sockaddr*)&discovery_addr,discovery_length)<0) {
-					perror("sendto socket failed for discovery_socket\n");
+					LOGT("sendto socket failed for discovery_socket: [%s]\n", strerror(errno));
 					continue;
 				} else {
-					LOGX ("#%d discovery message sent.\r\n", x);
+					LOGT("#%d discovery message sent.\n", x);
 				} 
-//				Sleep (100);
-				// reading answers with 100 ms timeout
-			    struct sockaddr_in from_addr;
+
+
+				struct sockaddr_in from_addr;
 				unsigned long my_ip_address = inet_addr(interfaces[n].ip_address);
 				int length;
 				int bytes_read;
@@ -312,20 +359,20 @@ bool Ethernet :: scan_devices ()   // was discover()
 
    					bytes_read = recvfrom (interfaces[n].d_socket, (char *) inp_buf, sizeof(inp_buf), 0, (struct sockaddr*)&from_addr, &length);
 					if (bytes_read < 0) {
-						LOGX("Reading discovery: %s\n", strerror(errno));
+						LOGT("Reading discovery: %s\n", strerror(errno));
 						continue;
 					}
 					//LOG(("RECEIVED %d bytes: from [%s]\n", bytes_read, inet_ntoa ( ((struct sockaddr_in *)&from_addr)->sin_addr)) );
 
 					if (memcmp ( &(((struct sockaddr_in *)&from_addr)->sin_addr), &my_ip_address, sizeof(my_ip_address)) == 0) {
-						LOG (("WARNING: ignoring fake answer coming from ourselves !\n"));
+						LOGT("%s\n", "WARNING: ignoring fake answer coming from ourselves !");
 						continue;
 					}
 
 					if (inp_buf[0]==0xEF && inp_buf[1]==0xFE) {
 						switch(inp_buf[2]) {
 							case 1:
-								LOGX("%s", "unexpected data packet when in discovery mode\n");
+								LOGT("%s", "unexpected data packet when in discovery mode\n");
 								break;
 							case 2:  // response to a discovery packet - hardware is not yet sending
 							case 3:  // response to a discovery packet - hardware is already sending
@@ -334,22 +381,22 @@ bool Ethernet :: scan_devices ()   // was discover()
 
 									if (inp_buf[3] == 0 && inp_buf[4] == 0 && inp_buf[5] == 0 &&
 										inp_buf[6] == 0 && inp_buf[7] == 0 && inp_buf[8] == 0) {
-										LOGX("%s", "NULL MAC address in answer, skipping\n");
+										LOGT("%s", "NULL MAC address in answer, skipping\n");
 										break;
 									}
 
 									// get MAC address from reply
-									sprintf(card.mac_address,"%02X:%02X:%02X:%02X:%02X:%02X",
+									snprintf(card.mac_address, sizeof(card.mac_address), "%02X:%02X:%02X:%02X:%02X:%02X",
                                             inp_buf[3]&0xFF, inp_buf[4]&0xFF, inp_buf[5]&0xFF, inp_buf[6]&0xFF, inp_buf[7]&0xFF, inp_buf[8]&0xFF);
-									LOGX("Radio MAC address %s\n", card.mac_address);
+									LOGT("Radio MAC address %s\n", card.mac_address);
     
 									// get ip address from packet header
-									sprintf (card.ip_address,"%d.%d.%d.%d",
+									snprintf(card.ip_address, sizeof(card.ip_address), "%d.%d.%d.%d",
 											 from_addr.sin_addr.s_addr      & 0xFF,
 											(from_addr.sin_addr.s_addr>>8)  & 0xFF,
 											(from_addr.sin_addr.s_addr>>16) & 0xFF,
 											(from_addr.sin_addr.s_addr>>24) & 0xFF);
-									LOGX("Radio IP address %s\n", card.ip_address);
+									LOGT("Radio IP address %s\n", card.ip_address);
 									card.code_version = inp_buf[9];
 									switch (inp_buf[10]) {
 										case 0x00:
@@ -368,61 +415,66 @@ bool Ethernet :: scan_devices ()   // was discover()
 											snprintf (card.board_id, sizeof(card.board_id), "%s", "unknown" );
 											break;
 									}       
-									LOGX("***** Board id: %s\n",    card.board_id);
-									LOGX("***** version:  %1.2f\n", card.code_version /10.0);
+									LOGT("***** Board id: %s\n",    card.board_id);
+									LOGT("***** version:  %1.2f\n", card.code_version /10.0);
 
 									card.b_card_ip_address = interfaces[n].b_ip_address;
 
 									// check if this device was already discovered
 									if ( search_dev_by_ip (card.ip_address) == 0) {
 										devs[dev_found] = card;
+										psw->DeviceFound(&(devs[dev_found]));
 										dev_found++;
 									} else {
-										LOGX("%s", "Duplicated response, discard\n");
+										LOGT("%s", "Duplicated response, discard\n");
 									}
 
 
 									if(inp_buf[2]==3) {
-										LOGX("%s", "Radio is sending\n");
+										LOGT("%s", "Radio is sending\n");
 									}
 								} else {
-									LOGX("%s", "too many radio cards!\n");
+									LOGT("%s", "too many radio cards!\n");
 									break;
 								}
 							break;
 							default:
-								LOGX("unexpected packet type: 0x%02X\n",inp_buf[2]);
+								LOGT("unexpected packet type: 0x%02X\n",inp_buf[2]);
 								break;
 							}
 						} else {
-							LOG(("received bad header bytes on data port %02X,%02X\n", inp_buf[0], inp_buf[1] ));
+							LOGT("received bad header bytes on data port %02X,%02X\n", inp_buf[0], inp_buf[1] );
 						}
 				}
 	
 		}
 		closesocket (interfaces[n].d_socket);
 	}
+	for (int x = 0; x < dev_found; ++x) {
+		LOGT("%d: ip: %s mac: %s bid: %s code ver: %d card ip: %p\n", x,
+			devs[x].ip_address, devs[x].mac_address, devs[x].board_id, devs[x].code_version, devs[x].b_card_ip_address);
+	}
+	psw->ScanStopped(dev_found);
 	return true;
 }
 
 void	Ethernet :: startReceive (struct Device *p)
-///////////////	void  metis_start_receive_thread (const METIS_CARD *pCard, METIS_FATAL_ERROR_CALLBACK fecb, METIS_FATAL_ERROR_CALLBACK ttmocb)
 {
     int i;
     int rc;
     struct hostent *h;
 	unsigned char buffer [64];
 
-    LOGX("%s", "Metis starting receive thread\n");
+    LOGT("%s", "starting receive thread\n");
 
     //discovering = 0;
 
     h = gethostbyname (p->ip_address);
     if (h == NULL) {
-        LOGX("metis_start_receiver_thread: unknown host %s\n", p->ip_address);
+        LOGT("unknown host %s\n", p->ip_address);
         return;
     } else {
-        LOGX("metis_start_receiver_thread on host %s\n", p->ip_address);
+        LOGT("host %s\n", p->ip_address);
 	}
 
 	//
@@ -434,45 +486,36 @@ void	Ethernet :: startReceive (struct Device *p)
 
 		data_socket = socket (PF_INET,SOCK_DGRAM,IPPROTO_UDP);
 		if (data_socket < 0) {
-			LOGX("BAD SOCKET !!!!!! [%s]\n", strerror(errno));
+			LOGT("BAD SOCKET !!!!!! [%s]\n", strerror(errno));
 			return;
 		} else {
-			LOGX("Socket created: %d\n", data_socket);
+			LOGT("Socket created: %d\n", data_socket);
 		}
 		// bind to this interface
 		xname.sin_family = AF_INET;
 		xname.sin_addr.s_addr = p->b_card_ip_address;
-		//memcpy((char *)&name.sin_addr.s_addr, &metis_cards[0].card_ip_address, sizeof(metis_cards[0].card_ip_address));
 		xname.sin_port = htons(DISCOVERY_SEND_PORT);
 		rc = bind (data_socket, (struct sockaddr*)&xname, sizeof(xname));
 		if (rc != 0) {
-			LOG(("BIND on %s FAILED: %s\n", inet_ntoa(xname.sin_addr), strerror (errno) ));
-			//return;
+			LOGT("BIND on %s FAILED: %s\n", inet_ntoa(xname.sin_addr), strerror (errno));
 		} else {
-			LOGX("BIND to %s successfull\n", inet_ntoa(xname.sin_addr));
+			LOGT("BIND to %s successfull\n", inet_ntoa(xname.sin_addr));
 		}
 
 		// extablish a sort of a receive queue
 		int bsize = 102400000;
 		rc = setsockopt (data_socket, SOL_SOCKET, SO_RCVBUF, (const char *)&bsize, sizeof(bsize));
 		if(rc != 0) {
-			LOGX("cannot set SO_RCVBUF: rc=%d\n", rc);
+			LOGT("cannot set SO_RCVBUF: rc=%d\n", rc);
 		}
 
-//	    discovery_length=sizeof(discovery_addr);
-//		memset(&discovery_addr,0,discovery_length);
-//		discovery_addr.sin_family=AF_INET;
-//		discovery_addr.sin_port=htons(DISCOVERY_SEND_PORT);
-//		discovery_addr.sin_addr.s_addr=htonl(INADDR_BROADCAST);
-
 	    // start a receive thread to get discovery responses
-		//((METIS_CARD *)pCard)->CbFatalError = fecb;
 	    rc = pthread_create ( &receive_thread_id, NULL, receive_thread, (void *)this);
 		if (rc != 0) {
-			LOGX("pthread_create failed on receive thread: rc=%d\n", rc);
+			LOGT("pthread_create failed on receive thread: rc=%d\n", rc);
 			return;
 		} else {
-			LOGX("%s\n", "receive thread: thread succcessfully started");
+			LOGT("%s\n", "receive thread: thread succcessfully started");
 		}
 	}
 
@@ -482,10 +525,8 @@ void	Ethernet :: startReceive (struct Device *p)
     data_addr.sin_port   = htons(DATA_PORT);
     memcpy((char *)&data_addr.sin_addr.s_addr, h->h_addr_list[0], h->h_length);
 
-	// TBD TBD
-	//ozy_prime();
 	pFlow->initialization(this);
-	LOGX("%s", "Flow initialization done\n");
+	LOGT("%s", "Flow initialization done\n");
 
 	Sleep(300);
 
@@ -498,15 +539,14 @@ void	Ethernet :: startReceive (struct Device *p)
     for (i=0; i<60; i++) buffer[i+4] = 0x00;
 
     send_buffer (data_socket, &buffer[0], 64);
-    LOGX("%s", "START COMMAND SENT\n");
+    LOGT("%s", "START COMMAND SENT\n");
 
-	LOGX("%s", "starting metis_watchdog_thread\n");
+	LOGT("%s", "starting watchdog_thread\n");
 	watchdog_timeout_in_ms = 250;
     // start a watchdog to make sure we are receiving frames
-	//((METIS_CARD *)pCard)->CbTransmissionTmo = ttmocb;
     rc = pthread_create ( &watchdog_thread_id, NULL, watchdog_thread, (void *)this);
     if(rc != 0) {
-        LOGX("pthread_create failed on watchdog thread: rc=%d\n", rc);
+        LOGT("pthread_create failed on watchdog thread: rc=%d\n", rc);
         return;
     }
 
@@ -518,32 +558,30 @@ void	Ethernet :: startReceive (struct Device *p)
 
 void* Ethernet :: receive_thread (void* arg) 
 {
-    struct sockaddr_in addr;
+
+	Ethernet *pTgt = (Ethernet *)arg;
+
+	struct sockaddr_in addr;
     int length;
     int bytes_read;
-	char *rc = 0;
-	char *p_fatal_error = 0;
-	Ethernet *pTgt = (Ethernet *)arg;
+
+	const char *p_fatal_error = 0;
 	static const char *sync_err = "synch error";
+	static const char *unexp_pt = "unexpected packet type";
+	static const char *exiting = "exiting...";
+	static const char *unexp_eplen = "unexpected EP lenght" ;
+	const char *rc = 0;
 	int loop = 1;
 
     length = sizeof(addr);
     while (loop) {
    	bytes_read = recvfrom (pTgt->data_socket, (char *) pTgt->input_buffer, sizeof(pTgt->input_buffer), 0, (struct sockaddr*)&addr, &length);
         if(bytes_read < 0) {
-            perror("recvfrom socket failed for metis_receive_thread");
-
-			//char *p = (char *) malloc (strlen(strerror (errno))+1);
-			//strcpy (p, strerror (errno));
-			rc = _strdup(strerror (errno));
+			LOGT("recvfrom socket failed for receive_thread: [%s]\n", strerror(errno));
+			rc = strerror (errno);
             break;
         }
-		//LOG(("RECEIVED %d bytes: from [%s]\n", bytes_read, inet_ntoa ( ((struct sockaddr_in *)&addr)->sin_addr)) );
-
-//		if (memcmp ( &((&addr)->sin_addr), &(pTgt->b_card_ip_address), sizeof(pTgt->b_card_ip_address)) == 0) {
-//			LOG (("WARNING: ignoring fake answer coming from ourselves !\n"));
-//			continue;
-//		}
+		//LOGT("RECEIVED %d bytes: from [%s]\n", bytes_read, inet_ntoa ( ((struct sockaddr_in *)&addr)->sin_addr));
 
         if (pTgt->input_buffer[0] == 0xEF && pTgt->input_buffer[1] == 0xFE) {
             switch (pTgt->input_buffer[2]) {
@@ -554,103 +592,57 @@ void* Ethernet :: receive_thread (void* arg)
 
                         // get the sequence number
                         pTgt->sequence = ((pTgt->input_buffer[4]&0xFF)<<24)+((pTgt->input_buffer[5]&0xFF)<<16)+((pTgt->input_buffer[6]&0xFF)<<8)+(pTgt->input_buffer[7]&0xFF);
-                        //LOG(("received data ep=%d sequence=%ld\n", pTgt->ep, pTgt->sequence));
+                        //LOGT("received data ep=%d sequence=%ld\n", pTgt->ep, pTgt->sequence);
 
                         switch (pTgt->ep) {
                             case 6:
-                                // process the data !!!!!!!!!!!!!!!!!
-                                //if (process_ozy_input_buffer(&(pTgt->input_buffer[8]))   < 0) {
+                                // process the data
 								if ( pTgt->pFlow->processFromRadio (&(pTgt->input_buffer[8])) < 0) {
-									//char *p = (char *) malloc (strlen(sync_err)+1);
-									//strcpy (p, sync_err);
-									p_fatal_error = _strdup(sync_err);
+									p_fatal_error = sync_err;
 									loop = 0;
 								}
-                                //if (process_ozy_input_buffer(&(pTgt->input_buffer[520])) < 0) {
 								if ( pTgt->pFlow->processFromRadio (&(pTgt->input_buffer[520])) < 0) {
-									//char *p = (char *) malloc (strlen(sync_err)+1);
-									//strcpy (p, sync_err);
-									p_fatal_error = _strdup(sync_err);
+									p_fatal_error = sync_err;
 									loop = 0;
 								}
                                 break;
                             case 4:
-                                //LOGX("EP4 data\n");
+                                //LOGT("EP4 data\n");
                                 break;
                             default:
-                                LOG(("unexpected EP %d length=%d\n", pTgt->ep, bytes_read ));
+                                LOGT("unexpected EP %d length=%d\n", pTgt->ep, bytes_read );
+								p_fatal_error = unexp_eplen;
+								loop = 0;
                                 break;
                         }
                     }
                     break;
                 case 2:  // response to a discovery packet - hardware is not yet sending
                 case 3:  // response to a discovery packet - hardware is already sending
-#if 0
-                    if(discovering) {
-                        if(found<MAX_METIS_CARDS) {
-                            // get MAC address from reply
-                            sprintf(metis_cards[found].mac_address,"%02X:%02X:%02X:%02X:%02X:%02X",
-                                       input_buffer[3]&0xFF,input_buffer[4]&0xFF,input_buffer[5]&0xFF,input_buffer[6]&0xFF,input_buffer[7]&0xFF,input_buffer[8]&0xFF);
-                            LOGX("Radio MAC address %s\n",metis_cards[found].mac_address);
-    
-                            // get ip address from packet header
-                            sprintf(metis_cards[found].ip_address,"%d.%d.%d.%d",
-                                       addr.sin_addr.s_addr&0xFF,
-                                       (addr.sin_addr.s_addr>>8)&0xFF,
-                                       (addr.sin_addr.s_addr>>16)&0xFF,
-                                       (addr.sin_addr.s_addr>>24)&0xFF);
-                            LOGX("Radio IP address %s\n",metis_cards[found].ip_address);
-                            metis_cards[found].code_version = input_buffer[9];
-                            switch (input_buffer[10]) {
-                               case 0x00:
-                                  metis_cards[found].board_id = "Metis";
-                                  break;
-                               case 0x01:
-                                  metis_cards[found].board_id = "Hermes";
-                                  break;
-                               case 0x02:
-                                  metis_cards[found].board_id = "Griffin";
-                                  break;
-                               case 0x04:
-                                  metis_cards[found].board_id = "Angelia";
-                                  break;
-                               default: 
-                                  metis_cards[found].board_id = "unknown";
-                                  break;
-                            }       
-                            LOGX("***** Board id: %s\r\n",metis_cards[found].board_id);
-                            LOGX("***** version:  %1.2f\r\n",metis_cards[found].code_version /10.0);
-
-                            found++;
-                            if(input_buffer[2]==3) {
-                                LOGX("%s", "Radio is sending\n");
-                            }
-                        } else {
-                            LOGX("%s", "too many radio cards!\n");
-                        }
-                    } else {
-#endif
-                    LOGX("%s", "unexepected discovery response when not in discovery mode\n");
-                    
+                    LOGT("%s", "unexepected discovery response when not in discovery mode\n");
                     break;
                 default:
-                    LOGX("unexpected packet type: 0x%02X\n", pTgt->input_buffer[2]);
-                    break;
+                    LOGT("unexpected packet type: 0x%02X\n", pTgt->input_buffer[2]);
+					p_fatal_error = unexp_pt;
+					loop = 0;
+					break;
             }
         } else {
-            LOG(("received bad header bytes on data port %02X,%02X\n", pTgt->input_buffer[0], pTgt->input_buffer[1] ));
+            LOGT("received bad header bytes on data port %02X,%02X\n", pTgt->input_buffer[0], pTgt->input_buffer[1] );
         }
 
     }
-	if (p_fatal_error) pTgt->FatalError (p_fatal_error);
-    return rc;    
+	if (p_fatal_error) {
+		pTgt->FatalError(p_fatal_error);
+		return (void *)p_fatal_error;
+	} else
+		return (void *)exiting;    
 }
 
 int Ethernet :: write (unsigned char ep, unsigned char* buffer, int length) {
     int i;
 
-    if(offset==8) {
-
+    if (offset==8) {
         send_sequence++;
         output_buffer[0]=0xEF;
         output_buffer[1]=0xFE;
@@ -675,16 +667,14 @@ int Ethernet :: write (unsigned char ep, unsigned char* buffer, int length) {
 
         // send the buffer
         send_buffer (data_socket, &output_buffer[0], 1032);
-
     }
-
     return length;
 }
 
 void Ethernet :: send_buffer (int s, unsigned char* buffer, int length) {
-//LOGX("metis_send_buffer: length=%d\n",length);
+//LOGT("length=%d\n",length);
     if (sendto (s, (const char *)buffer, length, 0, (struct sockaddr*)&data_addr,data_addr_length)<0) {
-		LOGX("sendto socket failed: %s\n", strerror(errno));
+		LOGT("sendto socket failed: %s\n", strerror(errno));
 	}
 }
 
@@ -693,26 +683,22 @@ void* Ethernet :: watchdog_thread (void* arg)
 {
 	Ethernet *pTgt = (Ethernet *)arg;
 	long last_sequence=-1;
-	char *pTmoMsg = _strdup("Timeout receiving packets from hardware.\n");
-	// sleep for 1 second
-	// check if packets received
-	LOGX("%s\n", "running metis_watchdog_thread\n");
+	static const char *pTmoMsg = "Timeout receiving packets from hardware.";
 
+	// check if packets received
+	LOGT ("%s\n", "watchdog_thread running");
 	while(1) {
-		//LOGX("watchdog sleeping...\n");
+		//LOGT("watchdog sleeping...\n");
 		Sleep (pTgt->watchdog_timeout_in_ms);
 		if ( pTgt->sequence == last_sequence ) {
-			LOG(("No metis packets for %d second: sequence=%ld\n", pTgt->watchdog_timeout_in_ms, pTgt->sequence ));
-			//dump_metis_buffer ("last frame received", pTgt->sequence, pTgt->input_buffer);
-			//dump_metis_buffer ("last frame sent", pTgt->send_sequence, pTgt->output_buffer);
+			LOGT("No packets for %d ms: sequence=%ld\n", pTgt->watchdog_timeout_in_ms, pTgt->sequence );
 			break;
 		}
 		last_sequence = pTgt->sequence;
 	}
 
 	pTgt->TransmissionTmo (pTmoMsg);
-
-	LOGX("%s", "exit watchdog thread\n");
+	LOGT("%s\n", pTmoMsg);
 	return 0;
 }
 
@@ -720,7 +706,7 @@ void	Ethernet :: stopReceive  ()
 {
 	void *rc;
 
-	unsigned char xbuffer [128];
+	unsigned char xbuffer[64] = {0};
 
 	// set up a packet to stop the stream
     xbuffer[0]=0xEF;
@@ -728,20 +714,20 @@ void	Ethernet :: stopReceive  ()
     xbuffer[2]=0x04;    // data send state (0x00=stop)
     xbuffer[3]=0x00;    // I/Q only STOP 
 
-	for (int i=0; i<60; i++) xbuffer[i+4]=0x00;
+	//for (int i=0; i<60; i++) xbuffer[i+4]=0x00;
 
 	// send stop command
-	send_buffer (data_socket, &xbuffer[0], 64);         
-	LOGX("%s\n", "Stop command sent");
+	send_buffer(data_socket, &xbuffer[0], sizeof(xbuffer));
+	LOGT("%s\n", "Stop command sent");
 	// wait for watchdog to detect that hw has really stopped
 	pthread_join (watchdog_thread_id, &rc);
-	LOGX("%s\n", "Destroying receiver thread....");
+	LOGT("%s\n", "Destroying receiver thread....");
 	// destroy receiver thread
 	closesocket (data_socket);
 	pthread_join (receive_thread_id, &rc);
 	data_socket = -1;
 
-	LOGX("%s\n", (char *)rc);
+	LOGT("%s\n", (char *)rc);
 }
 
 
@@ -791,7 +777,7 @@ int Flow :: processFromRadio  (unsigned char *b)
 {
 	// check for synchronization sequence
 	if (!((b[0] == SC && b[1] == SC && b[2] == SC))) {
-		LOGX("%s\n", "!!!!!!!!!!!!!!!!! SYNC ERROR !!!!!!!!!!!!!!!!!");
+		LOGT("%s\n", "!!!!!!!!!!!!!!!!! SYNC ERROR !!!!!!!!!!!!!!!!!");
 		DumpHpsdrBuffer ("SYNC ERROR", nrxp, b);
 		return -1;
 	}
@@ -898,30 +884,46 @@ void Flow :: initialization (Link *pL)
 	}
 }
 
+#if 1
+template < int  N_SAMPLES >
+bool Receiver<N_SAMPLES> :: is_buffer_full (bool process_tx)
+{
+	// when we have enough samples send them to the clients
+	if ( ns == N_SAMPLES ) {
+		pr->process_iq_from_rx ( ni, input_buffer_i, input_buffer_q, N_SAMPLES);
+		if (process_tx) 
+			pr->process_iq_audio_to_radio ( (unsigned char *)&output_buffer[0],           (unsigned char *)&output_buffer[N_SAMPLES], 
+			(unsigned char *)&output_buffer[N_SAMPLES*2], (unsigned char *)&output_buffer[N_SAMPLES*3] );
+		ns = 0;
+		return true;
+	} else {
+		return false;
+	}
+}
+#endif
 
-
-void DumpHpsdrBuffer (char* rem, int np, unsigned char* b) {
+void DumpHpsdrBuffer (const char* rem, int np, const unsigned char* b) {
 	int i;
-	LOG(("%s: packet #%d\n", rem, np));
+	LOGT("%s: packet #%d\n", rem, np);
 	for(i = 0; i < Flow::O_BUF_SIZE; i += 16) {
-		LOG(("  [%04X] %02X%02X%02X%02X%02X%02X%02X%02X %02X%02X%02X%02X%02X%02X%02X%02X\n",
+		LOGT("  [%04X] %02X%02X%02X%02X%02X%02X%02X%02X %02X%02X%02X%02X%02X%02X%02X%02X\n",
 				i,
 				b[i+0], b[i+1],  b[i+2],  b[i+3],  b[i+4],  b[i+5],  b[i+6],  b[i+7],
 				b[i+8], b[i+9],  b[i+10], b[i+11], b[i+12], b[i+13], b[i+14], b[i+15]
-			));
+			);
 	}
-	LOG(("%s","\n"));
+	LOGT("%s","\n");
 }
 
 
-void DumpHpsdrHeader (char* remark, int np, unsigned char* b) {
-	LOG(("%s: packet #%d\n", remark, np));
+void DumpHpsdrHeader (const char* remark, int np, const unsigned char* b) {
+	LOGT("%s: packet #%d\n", remark, np);
     int i = 0;
-    LOG(("  [%04X] %02X%02X%02X%02X%02X%02X%02X%02X %02X%02X%02X%02X%02X%02X%02X%02X\n",
+    LOGT("  [%04X] %02X%02X%02X%02X%02X%02X%02X%02X %02X%02X%02X%02X%02X%02X%02X%02X\n",
             i,
 			b[i+0], b[i+1],  b[i+2],  b[i+3],  b[i+4],  b[i+5],  b[i+6],  b[i+7],
 			b[i+8], b[i+9],  b[i+10], b[i+11], b[i+12], b[i+13], b[i+14], b[i+15]
-		));
-    LOG(("%s","\n"));
+		);
+    LOGT("%s","\n");
 }
 

@@ -1,5 +1,5 @@
 /** 
- * @file hpsdr.cpp
+ * @file log.cpp
  * @brief Generic log functions
  * @author Andrea Montefusco IW0HDV
  * @version 0.0
@@ -27,14 +27,44 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <time.h>
+#include <string.h>
+#include <stdlib.h>
+
+#include "util.h"
+
+#define _DONT_DECLARE_TEMPLATE_
 #include "log.h"
 
-static FILE *pLog = 0;
+#if !defined NDEBUG || defined FLOG
 
-#if defined WIN32
+
+#if 0
+static FILE *pLog = 0;
+#endif
+
+#if defined _WIN32 || defined __MINGW32__
+#define WIN32_LEAN_AND_MEAN  // Exclude rarely-used stuff from Windows headers
 #include "windows.h"
-#include "logw.h"
+#include "logw.h"    // for log windows resources
+#endif
+
+struct LogImpl {
+	LogImpl():
+#if defined WIN32 && !defined NDEBUG
+		hLogDlg(NULL),
+#endif
+		pLog(0) {}
+
+#if defined WIN32 && !defined NDEBUG
+	HWND hLogDlg;
+#endif
+	FILE *pLog;
+};
+
+
+#if defined _WIN32 && !defined NDEBUG
 #include "dllmain.h" // for GetMyHandle()
+
 
 static void AppendTextToEditCtrl(HWND hWndEdit, LPCTSTR pszText)
 {
@@ -65,31 +95,30 @@ BOOL CALLBACK LogDlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM lParam)
 	    case WM_COMMAND:
         // WM_COMMAND is sent when an event occurs
         // the HIWORD of WPARAM holds the notification event code
+			break;
 
-			switch(LOWORD(wParam))
-			{
-				case IDOK:
-					MessageBox (hwnd, "Bye!", "This is also a message", 
-                                MB_OK | MB_ICONEXCLAMATION);
-				break;
-			}
-		break;
-		case WM_USER+1:
-			MessageBox (hwnd, "Bye!", "This is also a message", 
-                                MB_OK | MB_ICONEXCLAMATION);
-            break;
 		case WM_USER+2:
 			{
-				if (lParam) {
-					char buff[100];
-					time_t now = time (0);
-					strftime (buff, 100, "%Y-%m-%d %H:%M:%S ", localtime (&now));
-					AppendTextToEditCtrl(GetDlgItem(hwnd, IDC_LOG_TEXT), buff);
+				Log *pLog = (Log *)GetWindowLongPtr(hwnd, GWLP_USERDATA);
+
+				if (pLog) {
+					short flag = static_cast<short>(lParam);
+					if (flag) {
+						char buff[100];
+						time_t now = time(0);
+						strftime(buff, 100, "%Y-%m-%d %H:%M:%S ", localtime(&now));
+						AppendTextToEditCtrl(GetDlgItem(hwnd, IDC_LOG_TEXT), buff);
+					}
+
+					char *pszText = reinterpret_cast<char *>(wParam);
+					if (pszText) {
+						AppendTextToEditCtrl(GetDlgItem(hwnd, IDC_LOG_TEXT), (LPCTSTR)pszText);
+						pLog->xstrdel(pszText, __LINE__);
+					}
 				}
- 
-				char *pszText = (char *)((LPVOID)wParam);
-				AppendTextToEditCtrl(GetDlgItem(hwnd, IDC_LOG_TEXT), (LPCTSTR)pszText);
-				free (pszText);
+				else {
+					MessageBox(0, "WM_USER+2 null pi", "Warning!", MB_OK | MB_ICONINFORMATION);
+				}
 			}
             break;
 		default:
@@ -98,81 +127,212 @@ BOOL CALLBACK LogDlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM lParam)
 	return TRUE;
 }
 
+
+
+inline void Log::LogPostMsg(const char *pszText, bool timestamp)
+{
+	if (pszText && strlen(pszText) && pi && (pi->hLogDlg != NULL)) {
+		PostMessage(pi->hLogDlg, WM_USER + 2, reinterpret_cast<WPARAM>(xstrdup(pszText)), static_cast<LPARAM>(((timestamp == true) ? 1 : 0)));
+	}
+}
+
+void Log::CreateLogDialog(const char *pszName)
+{
+	pi->hLogDlg = CreateDialog(::GetMyHandle(),
+								MAKEINTRESOURCE(IDD_LOG_DIALOG),
+								HWND_DESKTOP,
+								LogDlgProc
+								);
+	
+	if (pi->hLogDlg != NULL) {
+		// setup class instance pointer into Windows object user data
+		SetWindowLongPtr(pi->hLogDlg, GWLP_USERDATA, (LONG)this);
+
+		char oldTitle[256];
+		char newTitle[1024];
+		GetWindowText(pi->hLogDlg, oldTitle, sizeof(oldTitle));
+		snprintf(newTitle, sizeof(newTitle), "%s - %s", oldTitle, pszName);
+		SetWindowText(pi->hLogDlg, newTitle);
+		ShowWindow(pi->hLogDlg, SW_SHOW);
+	}
+	else {
+		MessageBox(0, "CreateLogDialog returned NULL", "Warning!", MB_OK | MB_ICONINFORMATION);
+	}
+}
+
+#endif
+
+void Log::open(const char *pszLogFileName, int n)
+{
+	if (pi && pi->pLog == 0 && pszLogFileName && strlen(pszLogFileName)) {
+		char buf[1024] = {0};
+		snprintf(buf, sizeof(buf), "%s-%d.log", pszLogFileName, n);
+		pi->pLog = fopen(buf, "w+");
+#if defined WIN32 && !defined NDEBUG
+		CreateLogDialog(buf);
+#endif
+		char szBuf[1024] = { 0 };
+		GetCurrentDirectory(sizeof(szBuf), szBuf);
+		LOGX("Current directory: [%s]\n", szBuf);
+	}
+}
+
+void Log::close(void)
+{
+	if (pi && pi->pLog != 0) {
+		fflush(pi->pLog);
+		fclose(pi->pLog);
+	}
+#if defined WIN32 && !defined NDEBUG
+	if (pi && pi->hLogDlg) DestroyWindow (pi->hLogDlg);
+#endif
+}
+
+Log :: Log()
+{
+	pi = new LogImpl;
+}
+Log :: ~Log()
+{
+	close();
+}
+
+void Log::log_funcname_printf(int f, const char *pszFunctionName, int nLine, const char *pszFmt, ...)
+{
+	if (!pi && !pi->pLog) {
+		return;
+	}
+	va_list ap;
+	char szFmt[BUFSIZ];
+	char szBuf[BUFSIZ];
+
+	snprintf(szFmt, sizeof(szFmt), "%s:%d - %s", pszFunctionName, nLine, pszFmt);
+
+	va_start(ap, pszFmt);
+	vsprintf(szBuf, szFmt, ap);
+	va_end(ap);
+
+	fprintf(pi->pLog, "%s", szBuf);
+	fflush(pi->pLog);
+#if defined WIN32 && !defined NDEBUG
+	if (f) LogPostMsg(szBuf, true);
+#endif
+}
+
+void Log::log_printf(const char *format, ...)
+{
+	if (!pi && !pi->pLog) {
+		return;
+	}
+	va_list ap;
+	char szBuf[BUFSIZ];
+
+	va_start(ap, format);
+	vsprintf(szBuf, format, ap);
+	va_end(ap);
+	fprintf(pi->pLog, "%s", szBuf);
+	fflush(pi->pLog);
+#if defined WIN32 && !defined NDEBUG
+	LogPostMsg(szBuf, false);
+#endif
+}
+
+void Log::log_printf_mod(const char *pszFile, int nLine)
+{
+	if (!pi && !pi->pLog) {
+		return;
+	}	char szBuf[BUFSIZ];
+
+	snprintf(szBuf, sizeof(szBuf), "%s: %04.4d: ", pszFile, nLine);
+	fprintf(pi->pLog, "%s", szBuf);
+#if defined WIN32 && !defined NDEBUG
+	LogPostMsg(szBuf, true);
+#endif
+
+}
+
+
+//Log LLog;
+
+#endif
+
+
+#if 0
 static HWND hLogDlg = 0;
 
-void log_CreateLogDialog (const char *pszName)
+void log_CreateLogDialog(const char *pszName)
 {
-	hLogDlg = CreateDialog (GetMyHandle (), 
-							MAKEINTRESOURCE (IDD_LOG_DIALOG),
-							NULL, 
-							LogDlgProc);
+	hLogDlg = CreateDialog(GetMyHandle(),
+		MAKEINTRESOURCE(IDD_LOG_DIALOG),
+		NULL,
+		LogDlgProc);
 	if (hLogDlg != NULL)	{
-		char oldTitle [256];
-		char newTitle [1024];
-		GetWindowText (hLogDlg, oldTitle, sizeof(oldTitle));
-		sprintf (newTitle, "%s - %s", oldTitle, pszName);
-		SetWindowText (hLogDlg, newTitle);
+		char oldTitle[256];
+		char newTitle[1024];
+		GetWindowText(hLogDlg, oldTitle, sizeof(oldTitle));
+		snprintf(newTitle, sizeof(newTitle), "%s - %s", oldTitle, pszName);
+		SetWindowText(hLogDlg, newTitle);
 		ShowWindow(hLogDlg, SW_SHOW);
-	} else {
+	}
+	else {
 		MessageBox(0, "CreateDialog returned NULL", "Warning!", MB_OK | MB_ICONINFORMATION);
 	}
 }
 
-void LogPostMsg (const char *pszText, bool timestamp)
+
+inline void LogPostMsg(const char *pszText, bool timestamp)
 {
-	//char *pszBuf = (char *) malloc (strlen(pszText)+1);
-	//if (pszBuf) {
-	//	strcpy (pszBuf, pszText), PostMessage (hLogDlg, WM_USER+2, (WPARAM)pszBuf, timestamp);
-	//	free (pszBuf);  FREE IS IN DIALOG BOX !!!!!!!
-	if (pszText) {
-		PostMessage (hLogDlg, WM_USER+2, (WPARAM)_strdup(pszText), timestamp);
+	if (pszText && strlen(pszText) && hLogDlg) {
+		PostMessage(hLogDlg, WM_USER + 2, reinterpret_cast<WPARAM>(xstrdup(pszText)), static_cast<LPARAM>(((timestamp == true) ? 1 : 0)));
 	}
 }
 
-#endif
 
 
-void log_open (const char *pszLogFileName)
+void log_open(const char *pszLogFileName)
 {
-	if (pLog == 0) {
+	if (pLog == 0 && pszLogFileName) {
 		char buf[1024];
-		sprintf (buf, "%s-%d.log", pszLogFileName, GetInstanceNumber());
-		pLog = fopen (buf, "w+");
-#if defined WIN32
-		log_CreateLogDialog (buf);
+		snprintf(buf, sizeof(buf), "%s-%d.log", pszLogFileName, GetInstanceNumber());
+		pLog = fopen(buf, "w+");
+#if defined WIN32 && !defined NDEBUG
+		log_CreateLogDialog(buf);
 #endif
+		char szBuf[1024] = { 0 };
+		GetCurrentDirectory(sizeof(szBuf), szBuf);
+		LOGX("Current directory: [%s]\n", szBuf);
 	}
 }
-void log_close (void)
+void log_close(void)
 {
 	if (pLog != 0) {
-		fflush (pLog);
-		fclose (pLog);
+		fflush(pLog);
+		fclose(pLog);
 	}
-#if defined WIN32
-	DestroyWindow (hLogDlg);
+#if defined WIN32 && !defined NDEBUG
+	if (hLogDlg) DestroyWindow(hLogDlg);
 #endif
 }
-void log_funcname_printf( const char *pszFunctionName, int nLine, const char *pszFmt, ...) 
+void log_funcname_printf(int f, const char *pszFunctionName, int nLine, const char *pszFmt, ...)
 {
-	va_list ap; 
-	char szFmt[BUFSIZ]; 
+	va_list ap;
+	char szFmt[BUFSIZ];
 	char szBuf[BUFSIZ];
 
-	sprintf(szFmt, "%s:%d - %s", pszFunctionName, nLine, pszFmt);
+	snprintf(szFmt, sizeof(szFmt), "%s:%d - %s", pszFunctionName, nLine, pszFmt);
 
-	va_start (ap, pszFmt); 
-	vsprintf (szBuf, szFmt, ap); 
-	va_end (ap); 
+	va_start(ap, pszFmt);
+	vsprintf(szBuf, szFmt, ap);
+	va_end(ap);
 
-	fprintf (pLog, "%s", szBuf);
-	fflush (pLog);
-#if defined WIN32
-	LogPostMsg (szBuf, true);
+	fprintf(pLog, "%s", szBuf);
+	fflush(pLog);
+#if defined WIN32 && !defined NDEBUG
+	if (f) LogPostMsg(szBuf, true);
 #endif
 }
 
-void log_printf (const char *format, ...)
+void log_printf(const char *format, ...)
 {
 	va_list ap;
 	char szBuf[BUFSIZ];
@@ -180,24 +340,32 @@ void log_printf (const char *format, ...)
 	va_start(ap, format);
 	vsprintf(szBuf, format, ap);
 	va_end(ap);
-	fprintf (pLog, "%s", szBuf);
+	fprintf(pLog, "%s", szBuf);
 	fflush(pLog);
-#if defined WIN32
-	LogPostMsg (szBuf, false);
+#if defined WIN32 && !defined NDEBUG
+	LogPostMsg(szBuf, false);
 #endif
 }
 
-void log_printf_mod (const char *pszFile, int nLine)
+void log_printf_mod(const char *pszFile, int nLine)
 {
 	char szBuf[BUFSIZ];
 
-	sprintf (szBuf, "%s: %04.4d: ", pszFile, nLine);
-	fprintf (pLog, "%s", szBuf);
-#if defined WIN32
-	LogPostMsg (szBuf, true);
+	snprintf(szBuf, sizeof(szBuf), "%s: %04.4d: ", pszFile, nLine);
+	fprintf(pLog, "%s", szBuf);
+#if defined WIN32 && !defined NDEBUG
+	LogPostMsg(szBuf, true);
 #endif
 
 }
 
+void test()
+{
+	const char *ss = "sssssssssss";
+	int ii = 33;
 
-
+	//SLOG_OPEN("xxxxxxxxxxx");
+	//SLOGT("%s %d\n", ss, ii);
+	//SLOG_CLOSE;
+}
+#endif

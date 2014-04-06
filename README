@@ -8,14 +8,18 @@ Andrea Montefusco IW0HDV
 ---------------
 
 In order to use this DLL you have to install, as prerequisite, the runtime 
-for Microsoft Visual C++ 2010.
-Please select the proper release (32 or 64 bit), seconding your 
-Windows system requirement.
+for Microsoft Visual C++ 2013 available at
 
-Next the two shared libraries (.dll extension files provided in this packet) have 
-to be copied in the same directory where the Studio1 executable lives.
+   http://www.microsoft.com/en-us/download/details.aspx?id=40784
 
-In Debug directory you find another shared library, that, though, can be 
+Please select the proper release (vcredist_x64.exe or vcredist_x86.exe,
+respectively 64 bit or 32 bit), seconding your Windows system requirement.
+
+Next, the two shared libraries (.dll extension files, as provided in this packet) 
+have to be copied in the same directory from which the Studio1/HDSDR executable 
+runs.
+
+In Debug directory, you find another shared library, that, though, can be 
 used only if you have the real compiler installed in your machine (it seems 
 that Microsoft explicitly forbids to run an executable with debug info
 in a machine where the compiler is not installed [1]).
@@ -24,10 +28,21 @@ in a machine where the compiler is not installed [1]).
 2. First run
 ------------
 
-Start Studio1, if the only ExtIO is the Hermes one, it is automatically selected.
-Next the search for the radio hardware is started: if any hardware is found 
-the MAC and IP address are shown in the upper text box.
-So, press Start and the receivers is activated.
+Start Studio1, if the only ExtIO present into the the directory is the Hermes one, 
+it is automatically selected.
+Next the search thread for the radio hardware is started: a splash screen is shown and all
+the network interfaces probed are listed.
+If any hardware is found, into the listbox at the bottom of splash screen are listed
+all the hardware radio detected.
+At this point one has two options:
+
+a) double click on one of radio hardware listed: the specific radio's control panel 
+   will be displayed in the right bottom corner of the screen
+   
+b) press Start on Studio1//HDSDR GUI: the first receiver found is immediately activated.
+
+Option a) is useful to select (before Start on Studio1/HDSDRis pressed) the 
+number of receiver that will be used.
 
 
 3. How to run multiple instances of Studio 1

@@ -32,6 +32,7 @@
 #include <assert.h>
 #include "pthread.h"
 #include "log.h"
+#include "util.h"
 
 #include <winsock2.h>
 #include <iphlpapi.h>
@@ -52,14 +53,10 @@ struct HpsdrRxIQSample {
 
 	int int_32 ()
 	{	
-		int rv;
-		// samples from hardware are 24 bit signed integer
-		// put them in a regular int
-		rv  = (int)((signed char)   s1) << 16;
-		rv += (int)((unsigned char) s2) << 8 ;
-		rv += (int)((unsigned char) s3)      ;
-		// next, rescale to 32 bit
-		rv <<= 8;
+		int rv = 0;
+		rv = (s1 << 16) | (s2 << 8) | (s3);
+		// sign extension
+		if (rv & 0x00800000) rv = rv | 0xff000000;
 		return rv;
 	}
 	float float_32 ()
@@ -95,8 +92,8 @@ struct HpsdrMicSample {
 	{	
 		int rv;
 		// samples from hardware are 24 bit signed integer
-		// put them in a regular int
-		rv += (int)((unsigned char) s1) << 8 ;
+		// put them in a regular float
+		rv  = (int)((unsigned char) s1) << 8 ;
 		rv += (int)((unsigned char) s2)      ;
 		// next, rescale to +1.0/-1.0
 		return ((float)rv)/32767.0f;
@@ -140,7 +137,7 @@ public:
 
 	virtual int	write (unsigned char ep, unsigned char* buffer,int length) { assert(0); return 0;} ; //= 0;
 
-	//virtual bool found () = 0;
+
 
 protected:
 	Flow *pFlow;
@@ -148,6 +145,8 @@ protected:
 private:
 	
 };
+
+class ScanWatcher;
 
 
 class Ethernet: public Link {
@@ -160,36 +159,37 @@ public:
 	unsigned char	hw_address[6];
 	char			name [256];
 	int				d_socket;
+	int				status;
 	} ;
 
 struct Device {
 	char	ip_address[16];
 	char	mac_address[18];
 	char	board_id[64];
+	int     board_code;
 	int		code_version;
 	unsigned long b_card_ip_address;
 };
 
 
 	Ethernet (Flow *pF): Link(pF), data_socket(-1), sequence(-1),  watchdog_timeout_in_ms(250), send_sequence(-1), offset(8) {}
-	~Ethernet () {}
+	virtual ~Ethernet () {}
 
 	std::list < struct NetInterface >	getInterfaceList ();
 	std::list < struct Device >			getDeviceList ();
 
 	static int  scan_interface (int x, char *ifName);
-	static bool scan_devices   ();   // was discover()
+	static bool scan_devices   (ScanWatcher *);   // was discover()
 	
-	struct Device *found ();
+	static struct Device *found (int n = 0);
 
 	void	startReceive (struct Device *p);
 	void	stopReceive  ();
 	int		write (unsigned char ep, unsigned char* buffer,int length);
 
 protected:
-	virtual void FatalError (const char *) {};
-	virtual void TransmissionTmo (const char *) {};
-
+	virtual void FatalError (const char *) = 0;
+	virtual void TransmissionTmo (const char *) = 0;
 
 private:
 	
@@ -230,6 +230,20 @@ private:
 	static struct Device * search_dev_by_ip (const char * ip);
 
 };
+
+
+class ScanWatcher
+{
+public:
+	// called during scan_devices, to be overridden in derived classes
+	virtual int ScanStarted() { return 0; }
+	virtual int ScanStopped(int x = 0) { return 0; } // called with the number of devices found
+	virtual int	InterfaceFound(Ethernet::NetInterface *)	{ return 0; }
+	virtual int	DeviceFound(Ethernet::Device *)		{ return 0; }
+
+	~ScanWatcher() {}
+};
+
 
 //
 // class for control part of the HPSDR frame
@@ -296,6 +310,7 @@ struct Receiver {
 
 	
 	bool is_buffer_full (bool process_tx = false)
+	#if 0
 	{
 		// when we have enough samples send them to the clients
 		if ( ns == N_SAMPLES ) {
@@ -309,28 +324,89 @@ struct Receiver {
 			return false;
 		}
 	}
+	#else
+	;
+	#endif
 
 };
 
 
 #endif
 
-class Radio 
+
+
+class AlexFilter {
+public:
+	AlexFilter() : manual(false) /* disabled */, lp(_3020m), hp(_6_5M) {}
+	virtual ~AlexFilter() {}
+	enum LowPass {
+		_3020m = B8(00000001),
+		_6040m = B8(00000010),
+		_80m   = B8(00000100),
+		_160m  = B8(00001000),
+		_6m    = B8(00010000),
+		_1210m = B8(00100000),
+		_1715m = B8(01000000)
+	};
+	enum HighPass {
+		_13M    = B8(00000001),
+		_20M    = B8(00000010),
+		_9_5M   = B8(00000100),
+		_6_5M   = B8(00001000),
+		_1_5M   = B8(00010000),
+		_bypass = B8(00100000),
+		_6M     = B8(01000000),
+	};
+	
+	void setManual(bool nm) { 
+		manual = nm;
+	}
+
+	void setLP(LowPass nlp) { lp = nlp; }
+	LowPass getLP() { return lp; }
+
+	void setHP(HighPass nhp) { hp = nhp; }
+	HighPass getHP() { return hp; }
+
+	void setCtrl_9 (CtrlBuf *cd) 
+	{
+		if (manual) {
+			cd->c[2] |= B8(01000000);
+		} else {
+			cd->c[2] &= B8(10111111);
+		}
+
+		// clear all HPF bits
+		cd->c[3] &= B8(10000000);
+		cd->c[3] |= hp;
+
+		// clear all LPF bits
+		cd->c[4] &= B8(10000000);
+		cd->c[4] |= lp;
+
+	}
+
+private:
+	bool	 manual; /* false == 0 - manual mode disabled    */
+	LowPass  lp;
+	HighPass hp;
+};
+
+class Radio
 {
 public:
 	Radio (): n_rx(1), mox(0), duplex(1)
 	{
+		pAlex = new AlexFilter;
 		//rl.push_back ((Radio *)this);
 		for ( int i = 0; i < 8; ++i ) rx[i].setRadio (this), rx[i].setN (i);
 		setSampleRate (48000);
 	}
 
-	virtual ~Radio () {}
+	virtual ~Radio() { delete pAlex;  }
 
 	virtual void setFrequency (long nf, int nrec = 0) { rx[nrec].frequency = nf; }
 	virtual void getFrequency (long &f, int nrec = 0) { f = rx[nrec].frequency; }
-
-	void setADC ();
 
 	int		getNumberOfRx () { return n_rx; }
 	void	setNumberOfRx (int n) { n_rx = n; }
@@ -359,48 +435,42 @@ public:
 			output_decimation_rate = 8;
 			break;
 		default:
-			LOG(("Invalid sample rate, should be 48000,96000,192000,384000) was %d !\n", sr));
-			//exit(1);
+			LOGT("Invalid sample rate, should be 48000,96000,192000,384000) was %d !\n", sr);
 			break;
 		}
 	}
 	void getSampleRate (int &sr) { sr = sample_rate; }
 
-	virtual void setAttenuator (int newAtt)
-	{
-		//TBD
-		//ozy_set_hermes_att(newAtt);
-		//return true;
-	}
+	virtual void setAttenuator (int newAtt) = 0;
 
-
-	bool setPreamp (int p)
+	bool setPreamp (bool p)
 	{
-		//TBD
-		//ozy_set_preamp(p);
+		preamp = p;
 		return true;
 	}
 
 
-	bool setDither (int d)
+	bool setDither (bool d)
 	{
-		//TBD
-		//ozy_set_dither(d);
+		dither = d;
 		return true;
 	}
 
-	bool setRandomizer (int r)
-		//TBD
+	bool setRandomizer (bool r)
 	{
-		//ozy_set_random(r);
+		randomizer = r;
 		return true;
 	}
 
 
 	unsigned char getSwVersion() { return sw_ver; }
 
-	//virtual int process_iq_from_rx (unsigned char * b, int nbytes) { return 0; } // called when the rx buffer is full
-	virtual int process_iq_from_rx (int nrx, HpsdrRxIQSample *i, HpsdrRxIQSample *q, int ns) = 0; // called when the rx buffer is full
+	//
+	// process_iq_from_rx
+	// called when the rx buffer is full, consumes I/Q from RX
+	// pure virtual function to be implemented in derived radio classes
+	//
+	virtual int process_iq_from_rx (int nrx, HpsdrRxIQSample *i, HpsdrRxIQSample *q, int ns) = 0;
 
 	virtual int process_iq_audio_to_radio (unsigned char *, unsigned char *, unsigned char *, unsigned char *) { return 0; }
 
@@ -408,8 +478,6 @@ public:
 
 	virtual void getControlData (CtrlBuf *cd) 
 	{
-		//std::cout << "Radio getControlData" << std::endl; // compile error
-
 		// extract PTT, DOT and DASH, they are present in all control buffers
 		ptt  = (cd->c[0] & 0x01) == 0x01;
 		dash = (cd->c[0] & 0x02) == 0x02;
@@ -435,7 +503,6 @@ public:
 
 	virtual void setControlData (CtrlBuf *cd) // the first byte has to be preloaded with the control block requested to be filled in
 	{
-		//LOG (("Radio setControlData\n"));
 		if (mox) {
 			cd->c[0] |= 0x01;
 		} else {
@@ -446,6 +513,12 @@ public:
 			case 0:
 				cd->c[1] &= 0xfc;
 				cd->c[1] |= speed;
+
+				// Preamplifier
+				(preamp     == true) ? SET_BIT(cd->c[3], 2) : CLR_BIT(cd->c[1], 2);
+				// ADC controls
+				(dither     == true) ? SET_BIT(cd->c[3], 3) : CLR_BIT(cd->c[1], 3);
+				(randomizer == true) ? SET_BIT(cd->c[3], 4) : CLR_BIT(cd->c[1], 4);
 
 				// duplex ( 0 = off  1 = on )
 				cd->c[4] &= 0xfb;
@@ -474,12 +547,18 @@ public:
 			case 6:  // receiver #5
 			case 7:  // receiver #6
 			case 8:  // receiver #7
+			{
 				int nrec = (cd->c[0] >> 1) - 2;
 
-				cd->c[1] =  rx[nrec].frequency  >> 24        ;
-				cd->c[2] = (rx[nrec].frequency  >> 16) & 0xFF;
-				cd->c[3] = (rx[nrec].frequency  >> 8 ) & 0xFF;
-				cd->c[4] = (rx[nrec].frequency       ) & 0xFF;
+				cd->c[1] = rx[nrec].frequency >> 24;
+				cd->c[2] = (rx[nrec].frequency >> 16) & 0xFF;
+				cd->c[3] = (rx[nrec].frequency >> 8) & 0xFF;
+				cd->c[4] = (rx[nrec].frequency) & 0xFF;
+			}
+			break;
+
+			case 9: // 
+				pAlex->setCtrl_9(cd);
 			break;
 
 		}
@@ -496,12 +575,25 @@ public:
 
 	Receiver <1024> rx[8] ;
 
+	//
+	// helpers for AlexFilter
+	//
+	void setManual(bool nm) { pAlex->setManual(nm); }
+	void setLP (AlexFilter::LowPass nlp) {	pAlex->setLP(nlp); 	}
+	void setHP(AlexFilter::HighPass nhp) { pAlex->setHP(nhp); }
+
 private:
+	AlexFilter *pAlex;
+
 	int sample_rate;
 	int speed;
 	int output_decimation_rate;
 	int n_rx;
 	int duplex;
+	bool preamp;
+	bool dither;
+	bool randomizer;
+
 
 	bool  ptt;
 	bool  dash;
@@ -603,7 +695,6 @@ public:
 	virtual void setControlData (CtrlBuf *cd) 
 	{
 		Radio::setControlData (cd);
-		//LOG (("Hermes setControlData\n"));
 
 		switch (cd->c[0] >> 1) {
 		case 0:
@@ -613,14 +704,12 @@ public:
 		case 9:
 			cd->c[1] = power_out; 
 			break;
-
 		case 10:
-			
 			// Hermes attenuator management
 			// set to 
-			cd->c[4] |= 0x20;
-			cd->c[4] &= 0xe0;
-			cd->c[4] |= (attenuator);
+			cd->c[4] |= 0x20;   // enable attenuator
+			cd->c[4] &= 0xe0;   // zeroes four LSBs
+			cd->c[4] |= (attenuator); // logical OR of attenuator value
 			break;
 		}
 	}
@@ -640,8 +729,57 @@ protected:
 	int power_out; // 0 - 255
 };
 
-void DumpHpsdrBuffer (char* rem, int np, unsigned char* b);
+class Mercury: public Radio
+{
+public:
+	Mercury (): Radio()
+	{
+		//rl.push_back (this);
+	}
 
-void DumpHpsdrHeader (char* rem, int np, unsigned char* b);
+	void setAttenuator (int att) { attenuator = att; }
+//	void setOpenCollectorOutputs (int o) { oco = 0 ; }
+//	void setPowerOut (int p) { power_out = p; }
+
+	virtual void getControlData (CtrlBuf *cd) 
+	{
+		Radio::getControlData (cd);
+		// specific to Mercury, software release
+		switch((cd->c[0] >> 3) & 0x1F) {
+		case 0:
+			sw_ver = cd->c[2] ;
+			break;
+
+		}
+	}
+	virtual void setControlData (CtrlBuf *cd) 
+	{
+		Radio::setControlData (cd);
+
+		switch (cd->c[0] >> 1) {
+		case 0:
+			cd->c[1] |= B8(00001000); // 10 MHz Ref:   10  Mercury
+			assert(B8(00001000) == (0x02 << 2));
+			cd->c[1] |= (0x01 << 4);  // 122.88 MHz:   1   Mercury
+			cd->c[1] |= (0x02 << 5);  // Config:       10  Mercury
+			cd->c[1] |= (0x01 << 5);  // Mic Source:   1   Penelope
+			// Alex attenuator
+			cd->c[3] &= B8(11111100);
+			cd->c[3] |= ((attenuator / 10) & B8(00000011));
+			break;
+
+		}
+	}
+
+protected:
+	virtual void setSwVer (unsigned char sv) { sw_ver = sv; };
+
+	int attenuator;
+
+};
+
+void DumpHpsdrBuffer (const char* rem, int np, const unsigned char* b);
+
+void DumpHpsdrHeader (const char* rem, int np, const unsigned char* b);
 
 #endif
