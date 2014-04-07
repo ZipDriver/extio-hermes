@@ -11,8 +11,8 @@ RESOURCES_OBJ = gui_rc.o logw_rc.o
 
 $(TGT)/Extio_hpsdr_mgw.dll: $(OBJS) $(RESOURCES_OBJ)
 	$(CXX) $(OBJS) $(RESOURCES_OBJ) $(LDFLAGS) -o $@
-	cp Extio_hpsdr_mgw.dll "/c/Program Files (x86)/HDSDR"
-	cp Extio_hpsdr_mgw.dll "/c/Users/andrew/Studio_1/ExtIO/Hermes"
+	-cp Extio_hpsdr_mgw.dll "/c/Program Files (x86)/HDSDR"
+	-cp Extio_hpsdr_mgw.dll "/c/Users/andrew/Studio_1/ExtIO/Hermes"
 	
 $(TGT)/gui_rc.o:	$(SRC)/gui.rc
 	windres -i gui.rc -o gui_rc.o
