@@ -102,7 +102,7 @@ void ExtioEthernet::FatalError(const char *pMsg)
 
 void ExtioEthernet::TransmissionTmo(const char *pMsg) 
 { 
-	LOGT("%s\n", "**************");
+	LOGT("%s: [%s]\n", "TIMEOUT", pMsg);
 
 	if (pg) {
 		pg->setHw(pMsg);

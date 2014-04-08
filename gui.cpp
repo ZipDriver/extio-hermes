@@ -309,7 +309,9 @@ void Gui::setHwAddressGUI(const Ethernet::Device *pDev)
 
 void Gui::setHw (const char *pszBuf)
 {
-	if (pszBuf && strlen(pszBuf) && pi && pi->hDialog) PostMessage(pi->hDialog, WM_USER + 2, reinterpret_cast<WPARAM>(xstrdup(pszBuf)), static_cast<LPARAM>(0));
+	if (pszBuf && strlen(pszBuf) && pi && pi->hDialog) {
+		PostMessage(pi->hDialog, WM_USER + 2, reinterpret_cast<WPARAM>(xstrdup(pszBuf)), static_cast<LPARAM>(0));
+	}
 }
 
 void Gui::appendMessage (const char *pszBuf)
@@ -320,12 +322,13 @@ void Gui::appendMessage (const char *pszBuf)
 int  Gui::getRecNumber (void)
 {
 	char  buf[256];
-	int   n = 0;
+	int   n = 1;
 
 	if (pi && pi->hDialog) {
 		SendMessage(GetDlgItem(pi->hDialog, IDC_COMBO_N_RX), WM_GETTEXT, (WPARAM)sizeof(buf), (LPARAM)buf);
-		sscanf(buf, "%d", &n);
+		if (sscanf(buf, "%d", &n) == 1) return n;
 	}
+	LOGT("Internal error !! Returning %d\n", n);
 	return n;
 }
 
@@ -436,6 +439,25 @@ void HermesGui::DisableControls()
 
 bool HermesGui::OnInit(const GuiEvent& ev)
 { 
+	// 
+	// http://msdn.microsoft.com/en-us/library/windows/desktop/bb760238%28v=vs.85%29.aspx
+	//
+	HWND sliderAtt = GetDlgItem(ev.hWnd, IDC_SLIDER_ATT);
+	SendMessage(sliderAtt, TBM_SETRANGE, (WPARAM)0, (LPARAM)MAKELONG(0, 30));
+	SendMessage(sliderAtt, TBM_SETPOS, (WPARAM)0, 0);
+	SendMessage(sliderAtt, TBM_SETTICFREQ, (WPARAM)10, 0);
+	SendMessage(sliderAtt, TBM_SETPAGESIZE, (WPARAM)0, (LPARAM)MAKELONG(0, 10));
+	// fillin the rx number combo box
+	SendMessage(GetDlgItem(ev.hWnd, IDC_COMBO_N_RX), CB_ADDSTRING, 0, (LPARAM)"1");
+	SendMessage(GetDlgItem(ev.hWnd, IDC_COMBO_N_RX), CB_ADDSTRING, 0, (LPARAM)"1");
+	SendMessage(GetDlgItem(ev.hWnd, IDC_COMBO_N_RX), CB_ADDSTRING, 0, (LPARAM)"2");
+	SendMessage(GetDlgItem(ev.hWnd, IDC_COMBO_N_RX), CB_ADDSTRING, 0, (LPARAM)"3");
+	SendMessage(GetDlgItem(ev.hWnd, IDC_COMBO_N_RX), CB_ADDSTRING, 0, (LPARAM)"4");
+	SendMessage(GetDlgItem(ev.hWnd, IDC_COMBO_N_RX), CB_ADDSTRING, 0, (LPARAM)"5");
+	// default at first item, one receiver(s)
+	SendMessage(GetDlgItem(ev.hWnd, IDC_COMBO_N_RX), CB_SETCURSEL, 0, 0);
+	SendMessage(GetDlgItem(ev.hWnd, IDC_COMBO_N_RX), CB_SETCURSEL, 1, 0);
+
 	switch (sr) {
 	case 384000:
 		// order of parameters in the call: 
@@ -602,6 +624,8 @@ bool MercuryGui::OnInit(const GuiEvent& ev)
 
 	EnableAll(ev, GuiEvent(0, false));
 	EnableAll(ev, GuiEvent(GetDlgItem(ev.hWnd, IDC_COMBO_N_RX), true));
+
+	AppendWinTitle(GuiEvent(pi->hDialog, 0), buildString);
 
 	return true;
 }
@@ -782,11 +806,13 @@ bool MercuryGui::OnWmUser(int n, const GuiEvent& ev)
 	char * pszText = reinterpret_cast<char *>(ev.id);
 
 	if (n == 2 && pszText) {
+		LOGT("2: %s\n", pszText);
 		SetWindowText (GetDlgItem(ev.hWnd, IDC_STATIC_HW), (LPCTSTR)pszText);
 		xstrdel(pszText, __LINE__);
 		return true;
 	} else
 	if (n = 3 && pszText) {
+		LOGT("3: %s\n", pszText);
 		AppendTextToEditCtrl (GuiEvent(ev.hWnd, IDC_MSG_PANE), pszText);
 		xstrdel(pszText, __LINE__);
 		return true;
