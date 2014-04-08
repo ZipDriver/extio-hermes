@@ -5,17 +5,6 @@ Andrea Montefusco - IW0HDV
 
 
 
-
-0. Please act according to GPLv3 license
-----------------------------------------
-
-If you redistribute a binary package, please do accordingly to the license.
-So, you have to redistribute even the source, even if minimally changed or you
-have to do refer to some specific branch into the repository.
-If you want to contribute, you can ask a write access to source repository 
-and create you own branch.
-
-
 1. Installation
 ---------------
 
@@ -143,6 +132,15 @@ Don't forget to copy along even the pthreadVC2.dll and the two others dll
 as per 1.2 .
 
 
+
+6. Please act according to GPLv3 license
+----------------------------------------
+
+If you redistribute a binary package, please do that accordingly to the license.
+So, you have to redistribute the source, even if minimally changed, or you
+have to do refer to some specific branch into the repository.
+If you want to contribute, signup in GitHub and ask me a write access to source repository.
+Or, if you prefer, send me your patches and I will add, mentioning your call/name.
 
 
 

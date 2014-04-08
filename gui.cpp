@@ -60,8 +60,14 @@
 #include "guiutil.h"
 #include "gui.h" 
 
-const char *buildString = " - " __DATE__ ", " __TIME__;
-
+static const char *buildString = " - " __DATE__ ", " __TIME__ " - "
+#if defined _MSC_VER
+"ms";
+#elif defined __MINGW32__
+"gcc";
+#else
+"";
+#endif
 
 
 /*
@@ -343,8 +349,7 @@ ExtioHpsdrRadio < EXTIO_BASE_TYPE > * Gui::getRadio()
 {
 	if (pi && pi->pExr) {
 		return pi->pExr;
-	}
-	else
+	} else
 		return 0;
 }
 
@@ -415,7 +420,7 @@ HermesGui::HermesGui(int sample_rate) : Gui(IDD_HERMES), sr(sample_rate)
 {
 
 	LOGT("********************************* HermesCreateGUI: addr: %p\n", this);
-	if (pi) OnInit(GuiEvent(pi->hDialog, -1));
+	if (pi && pi->hDialog) OnInit(GuiEvent(pi->hDialog, -1));
 }
 
 void HermesGui::EnableControls()
@@ -474,6 +479,10 @@ bool HermesGui::OnInit(const GuiEvent& ev)
 		CheckRadioButton(ev.hWnd, IDC_RADIO_BW_384K, IDC_RADIO_BW_48K, IDC_RADIO_BW_48K);
 		break;
 	}
+	EnableAll(ev, GuiEvent(0, false));
+	EnableAll(ev, GuiEvent(GetDlgItem(ev.hWnd, IDC_COMBO_N_RX), true));
+
+	AppendWinTitle(GuiEvent(pi->hDialog, 0), buildString);
 
 	return true; 
 }
@@ -798,7 +807,7 @@ MercuryGui::MercuryGui(int sample_rate) : Gui(IDD_MERCURY), sr(sample_rate)
 {
 	LOGT("********************************* MercuryCreateGUI: pImpl: %p Gui addr: %p\n", pi, this);
 
-	OnInit(GuiEvent(pi->hDialog, -1));
+	if (pi && pi->hDialog) OnInit(GuiEvent(pi->hDialog, -1));
 }
 
 bool MercuryGui::OnWmUser(int n, const GuiEvent& ev)

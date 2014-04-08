@@ -153,7 +153,7 @@ class Ethernet: public Link {
 
 public:
 
-	struct NetInterface {
+struct NetInterface {
 	char			ip_address[16];
 	unsigned long	b_ip_address;
 	unsigned char	hw_address[6];
@@ -254,33 +254,6 @@ struct CtrlBuf {
 
 class Radio; // forward declaration
 
-#if 0
-template < class T , int  N_SAMPLES = 1024 , int N_BLOCKS = 2 >
-struct Receiver {
-
-	Receiver (): pr(0), frequency_changed(false), frequency(7050000), ns(0), nb(0), ni(0) {}
-
-	void setRadio (Radio *pR) { pr = pR; };
-	Radio *pr;
-	bool frequency_changed;
-	long frequency;
-	T input_buffer[N_SAMPLES*3];  // I, Q, Mic
-	T output_buffer[N_SAMPLES*4]; // Left Audio, Right Audio, Tx I, Tx Q
-	// output buffer toward the DLL CALLBACKS
-	T cb_buffer [2][N_SAMPLES*2*N_BLOCKS];
-	T ns;
-	T nb;
-	T ni;
-
-	void append_input_iq (T ls, T rs)  { input_buffer[ns] = ls, input_buffer[ns+N_SAMPLES] = rs; };
-	void append_input_mic (T ms) { input_buffer[ns+N_SAMPLES+N_SAMPLES] = ms; };
-	void next_sample () { ++ns; }
-
-	
-	bool is_buffer_full (bool process_tx = false);
-
-};
-#else
 template < int  N_SAMPLES = 1024 >
 struct Receiver {
 
@@ -307,31 +280,9 @@ struct Receiver {
 	void append_input_iq  ( HpsdrRxIQSample ls, HpsdrRxIQSample rs)  { input_buffer_i[ns] = ls, input_buffer_q[ns] = rs; };
 	void append_input_mic ( HpsdrMicSample ms ) { input_buffer_mic[ns] = ms; };
 	void next_sample () { ++ns; }
-
 	
-	bool is_buffer_full (bool process_tx = false)
-	#if 0
-	{
-		// when we have enough samples send them to the clients
-		if ( ns == N_SAMPLES ) {
-			pr->process_iq_from_rx ( ni, input_buffer_i, input_buffer_q, N_SAMPLES);
-			if (process_tx) 
-				pr->process_iq_audio_to_radio ( (unsigned char *)&output_buffer[0],           (unsigned char *)&output_buffer[N_SAMPLES], 
-												(unsigned char *)&output_buffer[N_SAMPLES*2], (unsigned char *)&output_buffer[N_SAMPLES*3] );
-			ns = 0;
-			return true;
-		} else {
-			return false;
-		}
-	}
-	#else
-	;
-	#endif
-
+	bool is_buffer_full (bool process_tx = false);
 };
-
-
-#endif
 
 
 
@@ -463,7 +414,7 @@ public:
 	}
 
 
-	unsigned char getSwVersion() { return sw_ver; }
+	//unsigned char getSwVersion() { return sw_ver; }
 
 	//
 	// process_iq_from_rx
@@ -606,7 +557,7 @@ protected:
 	//std::list <Radio *> rl;
 
 	unsigned char sw_ver;
-	virtual void setSwVer (unsigned char) = 0;
+	//virtual void setSwVer (unsigned char) = 0;
 };
 
 class Hermes: public Radio
@@ -620,7 +571,8 @@ public:
 	void setAttenuator (int att) { attenuator = att; }
 	void setOpenCollectorOutputs (int o) { oco = 0 ; }
 	void setPowerOut (int p) { power_out = p; }
-
+	int	 getFirmwareversion() { return sw_ver; }
+	
 	virtual void getControlData (CtrlBuf *cd) 
 	{
 		Radio::getControlData (cd);
@@ -715,7 +667,7 @@ public:
 	}
 
 protected:
-	virtual void setSwVer (unsigned char sv) { sw_ver = sv; };
+	//virtual void setSwVer (unsigned char sv) { sw_ver = sv; };
 	int io1;
 	int io2;
 	int io3;
@@ -772,7 +724,7 @@ public:
 	}
 
 protected:
-	virtual void setSwVer (unsigned char sv) { sw_ver = sv; };
+	//virtual void setSwVer (unsigned char sv) { sw_ver = sv; };
 
 	int attenuator;
 
