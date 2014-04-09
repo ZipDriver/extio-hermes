@@ -51,10 +51,10 @@
 // Ethernet class data
 //
 #pragma data_seg (".SS_HPSDR")
-struct Ethernet::Device Ethernet :: devs [MAX_DEVICES] = {0};
-struct Ethernet::NetInterface Ethernet :: interfaces[MAX_INTERFACES] = {0};
-int Ethernet :: nif   = 0;
-int Ethernet :: dev_found = 0;
+struct Ethernet::Device Ethernet :: devs [MAX_DEVICES] SHARED = {0};
+struct Ethernet::NetInterface Ethernet :: interfaces[MAX_INTERFACES] SHARED = {0};
+int Ethernet :: nif  SHARED = 0;
+int Ethernet :: dev_found SHARED = 0;
 #pragma data_seg ()
 
 struct Ethernet::Device * Ethernet :: search_dev_by_ip (const char * ip)
@@ -901,6 +901,12 @@ bool Receiver<N_SAMPLES> :: is_buffer_full (bool process_tx)
 	}
 }
 #endif
+
+int		Radio :: getNumberOfRx () { return n_rx; }
+void	Radio :: setNumberOfRx(int n) { LOGT("# of receivers set to: %d\n", n);  n_rx = n; }
+
+
+// utilities
 
 void DumpHpsdrBuffer (const char* rem, int np, const unsigned char* b) {
 	int i;

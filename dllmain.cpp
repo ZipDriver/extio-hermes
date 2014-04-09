@@ -9,9 +9,11 @@
 
 #include "log.h"
 #include "dllmain.h"
+#include "util.h"     // for shared macro
+
 
 #pragma data_seg (".SS_DLLMAIN")
-int Dll::instance_ = 0;
+int Dll::instance_ SHARED = 0 ;
 #pragma data_seg()
 
 HMODULE Dll::hMod = 0;

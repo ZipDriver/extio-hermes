@@ -359,8 +359,8 @@ public:
 	virtual void setFrequency (long nf, int nrec = 0) { rx[nrec].frequency = nf; }
 	virtual void getFrequency (long &f, int nrec = 0) { f = rx[nrec].frequency; }
 
-	int		getNumberOfRx () { return n_rx; }
-	void	setNumberOfRx (int n) { n_rx = n; }
+	int		getNumberOfRx () ;
+	void	setNumberOfRx(int n) ;
 
 	virtual void setSampleRate (int sr) 
 	{

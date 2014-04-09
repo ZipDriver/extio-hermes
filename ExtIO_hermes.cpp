@@ -120,8 +120,8 @@ DLL_CLASS(ExtIODll, hModule)
 #pragma data_seg (".SS_EXTIO_HERMES")
 
 // !!!! have to be initialized vars, due to shared segments rules constraints
-unsigned char bufHR[ MAX(sizeof(ExtioMercuryRadio < EXTIO_BASE_TYPE>), sizeof(ExtioMercuryRadio < EXTIO_BASE_TYPE >)) ] = { 0 };
-char bufHE [sizeof(ExtioEthernet)]							= { 0 };
+unsigned char bufHR[ MAX(sizeof(ExtioMercuryRadio < EXTIO_BASE_TYPE>), sizeof(ExtioMercuryRadio < EXTIO_BASE_TYPE >)) ] SHARED = { 0 };
+char bufHE [sizeof(ExtioEthernet)]	SHARED = { 0 };
 
 #pragma data_seg ()
 
@@ -322,13 +322,30 @@ EXTIO_API int __stdcall StartHW(long LOfrequency)
 		pExr->setIdllComm(new IntraComm());
 		pGui->EnableControls();
 	} else {
+		LOGT("XXXXXXXXXXXXXXXX%s\n", "-");
 		//
 		// needed in order to set ExtIO callback !!!
 		// 
-		pExr->setSampleRateHW(EXTIO_DEFAULT_SAMPLE_RATE);
+		//pExr->setSampleRateHW(EXTIO_DEFAULT_SAMPLE_RATE);
+		LOGT("2222222222222222%s\n", "-");
 
-		// signal to the main instance that we have to increase the number of active receivers
-		pR->setNumberOfRx(GetInstanceNumber());
+		// sanity checks
+		//
+		// first instance is:  #1
+		// second instance is: #2
+		// third instance is:  #3
+		//....
+		LOGT("33333333333333333%s\n", "-");
+		if (pR) {
+			if (GetInstanceNumber() > pR->getNumberOfRx()) {
+				GuiError("Too many instances started, unable to start receiver !").show();
+				return 0;
+			}
+			LOGT("44444444444444444%s\n", "-");
+		} else {
+			GuiError("Fatal error, no radio object instantiated !").show();
+			return 0;
+		}
 	}
 	
 	return EXTIO_NS; // # of samples returned by callback

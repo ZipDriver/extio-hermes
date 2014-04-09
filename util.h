@@ -27,6 +27,17 @@
 #if !defined	__UTIL_H__
 #define			__UTIL_H__
 
+//
+// http://sourceforge.net/p/mingw/mailman/mingw-users/thread/Pine.LNX.4.44.0310310459430.7328-100000@boutell.com/
+//
+#if defined __MINGW32__
+#define SHARED __attribute__((section(".shr"), shared))
+#define UNSHARED
+#else
+#define SHARED
+#endif
+
+
 #if defined _MSC_VER
 //#define  strdup _strdup
 //#define  wcstombs wcstombs_s

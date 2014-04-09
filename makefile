@@ -2,7 +2,7 @@ SRC=.
 TGT=.
 INCLUDES = -I.
 CXXFLAGS = -DNDEBUG -DFLOG -std=gnu++0x -DWINVER=0x502 -fpermissive $(INCLUDES)
-LDFLAGS = -lws2_32 -liphlpapi -L. -lpthreadVC2  -s -shared -Wl,--add-stdcall-alias,--subsystem,windows
+LDFLAGS = -lws2_32 -liphlpapi -L. -lpthreadVC2  -s -shared -Wl,--add-stdcall-alias,--subsystem,windows 
 
 SOURCES = $(wildcard $(SRC)/*.cpp)
 OBJS = $(addprefix $(TGT)/, $(notdir $(SOURCES:.cpp=.o))) 
@@ -13,6 +13,7 @@ $(TGT)/Extio_hpsdr_mgw.dll: $(OBJS) $(RESOURCES_OBJ)
 	$(CXX) $(OBJS) $(RESOURCES_OBJ) $(LDFLAGS) -o $@
 	-cp Extio_hpsdr_mgw.dll "/c/Program Files (x86)/HDSDR"
 	-cp Extio_hpsdr_mgw.dll "/c/Users/andrew/Studio_1/ExtIO/Hermes"
+	-cp Extio_hpsdr_mgw.dll "/c/Users/andrew/Studio1_105e"
 	-cp Extio_hpsdr_mgw.dll "/c/Users/andrew/HDSDR_270"
 	
 $(TGT)/gui_rc.o:	$(SRC)/gui.rc

@@ -14,6 +14,7 @@ typedef  void (* EXTIO_RX_CALLBACK) (int, int, float, int *) ;
 
 #include "intradllcomm.h"
 #include "log.h"
+#include "dllmain.h"  // for GetInstanceNumber
 
 template < typename ST, int NS >
 class IdllComm: public IntraComm 
@@ -150,8 +151,9 @@ public:
 		either by a hardware action, or by an interaction of the user with the DLL GUI.
 		When the main program receives this status, it calls immediately after
 		the GetHWSR() API to know the new sampling rate.
+		We are calling the callback only for the first instance (otherwise Studio 1 is looping on Start/Stop cycle - TBI).
 		*/
-		if (*pExtioCallback) (*pExtioCallback) (-1, 100, 0., 0);
+		if (*pExtioCallback && (::GetInstanceNumber()==1)) (*pExtioCallback) (-1, 100, 0., 0);
 	}
 	Radio * getRadio() { return pR_; }
 
