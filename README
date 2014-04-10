@@ -11,7 +11,7 @@ Andrea Montefusco - IW0HDV
 1.1 MinGW
 ---------
 
-The four shared libraries .dll extension files, as provided in 
+The three shared libraries (.dll files), as provided in 
 
 	https://app.box.com/s/kyx03kram2aw0my6sb9h
 
@@ -36,11 +36,6 @@ Next, the two shared libraries .dll extension files, as provided in
 
 have to be copied in the same directory from which the Studio1/HDSDR executable 
 runs.
-
-In Debug directory, if any, you find another shared library, that, though, can be 
-used only if you have the real compiler installed in your machine (it seems 
-that Microsoft explicitly forbids to run an executable with debug info
-in a machine where the compiler is not installed [1]).
 
 
 2. First run
@@ -112,11 +107,9 @@ unless you want to contribute.
 
 5.3) copy the following pthreads-win32 library components as found in
 
-ftp://sourceware.org/pub/pthreads-win32/dll-latest/dll/x86/pthreadVC2.dll
 ftp://sourceware.org/pub/pthreads-win32/dll-latest/include/pthread.h
 ftp://sourceware.org/pub/pthreads-win32/dll-latest/include/sched.h
 ftp://sourceware.org/pub/pthreads-win32/dll-latest/include/semaphore.h
-ftp://sourceware.org/pub/pthreads-win32/dll-latest/lib/x86/pthreadVC2.lib
 
 
 5.4) open the MinGW (MSYS) shell, make the sources directory current and type
@@ -128,8 +121,7 @@ in the same directory.
 The makefile even copy the dll in some predefined directory: that couldn't be so right
 in your system, so, depending on which SDR software do you want to use
 end  where you onstalled it, you could have to copy manually the dll.
-Don't forget to copy along even the pthreadVC2.dll and the two others dll
-as per 1.2 .
+Don't forget to copy along even the two others dll as per 1.1 .
 
 
 
@@ -143,9 +135,6 @@ If you want to contribute, signup in GitHub and ask me a write access to source 
 Or, if you prefer, send me your patches and I will add, mentioning your call/name.
 
 
-
-[1] Preparing a Test Machine To Run a Debug Executable,
-    http://msdn.microsoft.com/en-us/library/aa985618(v=vs.90).aspx
 
 
 
