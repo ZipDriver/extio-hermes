@@ -41,7 +41,6 @@
 #include <strsafe.h>
 #endif
 
-
 #include "util.h"
 #include "hpsdr.h"
 #include "log.h"
@@ -188,7 +187,7 @@ EXTIO_API bool __stdcall InitHW(char *name, char *model, int & extio_type)
 
 			pSplash = new HpsdrSplash(&pGui);
 
-			int rc = pthread_create(&scan_thread_id, NULL, scan_dev_thread, (void *)pSplash);
+			int rc = ::pthread_create(&scan_thread_id, NULL, scan_dev_thread, (void *)pSplash);
 			if (rc != 0) {
 				LOGT("pthread_create failed on scan device thread: rc=%d\n", rc);
 				return 0;
@@ -236,18 +235,6 @@ EXTIO_API int __stdcall StartHW(long LOfrequency)
 
 		if (pDev = Ethernet::found (pSplash->GetSel()) ) {
 
-#if 0
-			if (!pGui) {
-				LOGT("BOARD ID creating gui: [%s]\n", pDev->board_id);
-				// decides at run time which HW we have 
-				pGui = Gui::Create(pDev->board_id, EXTIO_DEFAULT_SAMPLE_RATE);
-				if (pGui == 0) {
-					static const char *msg = "Hardware unsupported, unable to start receiver !";
-					ShowError(msg);
-					return 0;
-				}
-			}
-#endif
 			if (pR == 0) {
 
 				if (pGui) {
@@ -273,8 +260,12 @@ EXTIO_API int __stdcall StartHW(long LOfrequency)
 				}
 
 				// The following call is really needed, in order to setup the samplerate
-				pExr->setSampleRateHW(EXTIO_DEFAULT_SAMPLE_RATE);
-
+				{
+					int new_sr;
+					pR->getSampleRate( new_sr );
+					LOGT("Instance #%d radio sample rate: %d\n", GetInstanceNumber(), new_sr);
+					pExr->setSampleRateHW ( new_sr );
+				}
 				// create an Hpsdr flow object and assign to the Ethernet object
 				Flow *pFlow = new Flow(pR);
 				pExtioEth = new ExtioEthernet(pGui, pFlow);
@@ -407,8 +398,8 @@ EXTIO_API long __stdcall GetHWSR()
 {
 	LOGT("Instance #%d\n", GetInstanceNumber());
 	int sr = EXTIO_DEFAULT_SAMPLE_RATE;
-	LOGT("   return: %d\n", sr);
 	if (pR) pR->getSampleRate(sr);
+	LOGT("   return: %d\n", sr);
 	return sr;
 }
 

@@ -30,7 +30,7 @@
 #include <list>
 #include <iostream>
 #include <assert.h>
-#include "pthread.h"
+#include <pthread.h>
 #include "log.h"
 #include "util.h"
 
@@ -41,7 +41,7 @@
 #pragma comment(lib, "IPHLPAPI.lib")
 #pragma warning( disable : 4995 )
 
-
+#define DEFAULT_SAMPLE_RATE 192000
 //
 // the HPSDR native samples are 24 bits signed integer, big endian 
 //
@@ -309,6 +309,11 @@ public:
 		_6M     = B8(01000000),
 	};
 	
+	void setTxAnt (int nta)
+	{
+		tx_ant = nta;
+	}
+	
 	void setManual(bool nm) { 
 		manual = nm;
 	}
@@ -319,6 +324,13 @@ public:
 	void setHP(HighPass nhp) { hp = nhp; }
 	HighPass getHP() { return hp; }
 
+	void setCtrl_0 (CtrlBuf *cd) 
+	{
+		// Alex TX
+		// Ant 1-2-3 control
+		cd->c[4] &= B8(11111100);
+		cd->c[4] |= (tx_ant & 0x03);
+	}
 	void setCtrl_9 (CtrlBuf *cd) 
 	{
 		if (manual) {
@@ -327,20 +339,22 @@ public:
 			cd->c[2] &= B8(10111111);
 		}
 
+		// Alex RX
 		// clear all HPF bits
 		cd->c[3] &= B8(10000000);
 		cd->c[3] |= hp;
 
+		// Alex TX
 		// clear all LPF bits
 		cd->c[4] &= B8(10000000);
 		cd->c[4] |= lp;
-
 	}
 
 private:
 	bool	 manual; /* false == 0 - manual mode disabled    */
 	LowPass  lp;
 	HighPass hp;
+	int		 tx_ant;
 };
 
 class Radio
@@ -351,7 +365,7 @@ public:
 		pAlex = new AlexFilter;
 		//rl.push_back ((Radio *)this);
 		for ( int i = 0; i < 8; ++i ) rx[i].setRadio (this), rx[i].setN (i);
-		setSampleRate (48000);
+		setSampleRate (DEFAULT_SAMPLE_RATE);
 	}
 
 	virtual ~Radio() { delete pAlex;  }
@@ -478,6 +492,8 @@ public:
 				// number or receivers (000 = 1 001 = 2 ...... 111 = 8
 				cd->c[4] &= 0xc7 ;
 				cd->c[4] |= (n_rx - 1) << 3;
+				
+				if (pAlex) pAlex->setCtrl_0(cd);
 			break;
 
 			case 1: // transmitter frequency TBD
@@ -532,7 +548,8 @@ public:
 	void setManual(bool nm) { pAlex->setManual(nm); }
 	void setLP (AlexFilter::LowPass nlp) {	pAlex->setLP(nlp); 	}
 	void setHP(AlexFilter::HighPass nhp) { pAlex->setHP(nhp); }
-
+	void setTxAnt(int na) { pAlex->setTxAnt(na); }
+	
 private:
 	AlexFilter *pAlex;
 

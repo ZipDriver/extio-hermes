@@ -11,7 +11,7 @@ Andrea Montefusco - IW0HDV
 1.1 MinGW
 ---------
 
-The three shared libraries (.dll files), as provided in 
+The shared library (.dll files), as provided in 
 
 	https://app.box.com/s/kyx03kram2aw0my6sb9h
 
@@ -90,11 +90,16 @@ fullfilled:
 
 http://www.mingw.org/wiki/Getting_Started
 
-5.2) install sources getting the zipped file at
+5.2) install the pthreads_win32 source and compile it; the source is found here:
+
+https://www.sourceware.org/pthreads-win32/
+
+
+5.3) install sources getting the zipped file at
 
 https://github.com/amontefusco/extio-hermes/archive/mercury.zip
 
-unzip it at some conveniente location in your system: you should 
+unzip it at some convenient location in your system: you should 
 end with directory called like that
 
 extio-hermes-xxxxxx
@@ -103,13 +108,8 @@ where the "xxxxxx" is master or the branch name that you selected.
 Please note that using the git client, whilst is perfectly feasible
 both via CLI and GUI, is not mandatory, neither advisable, 
 unless you want to contribute.
-
-
-5.3) copy the following pthreads-win32 library components as found in
-
-ftp://sourceware.org/pub/pthreads-win32/dll-latest/include/pthread.h
-ftp://sourceware.org/pub/pthreads-win32/dll-latest/include/sched.h
-ftp://sourceware.org/pub/pthreads-win32/dll-latest/include/semaphore.h
+Moreover, the makefile assumes that pthreads library has been installed and compiled
+in a directory at the same level; if not, change INCLUDES macro accordingly.
 
 
 5.4) open the MinGW (MSYS) shell, make the sources directory current and type
@@ -120,9 +120,7 @@ if the process ends correctly, you should find the Extio_hpsdr_mgw.dll file
 in the same directory.
 The makefile even copy the dll in some predefined directory: that couldn't be so right
 in your system, so, depending on which SDR software do you want to use
-end  where you onstalled it, you could have to copy manually the dll.
-Don't forget to copy along even the two others dll as per 1.1 .
-
+and  where you installed it, you could have to copy manually the dll.
 
 
 6. Please act according to GPLv3 license

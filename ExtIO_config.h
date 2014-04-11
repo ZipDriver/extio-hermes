@@ -37,7 +37,7 @@ typedef ExtIOtype < 8, int24_hpsdr>	ExtIO_int_hpsdr;
 **/
 
 typedef ExtIO_int24 EXTIO_BASE_TYPE;			// type of sample exchanged on each callback invocation
-const int EXTIO_DEFAULT_SAMPLE_RATE = 192000;	// starting sampling rate
+const int EXTIO_DEFAULT_SAMPLE_RATE = DEFAULT_SAMPLE_RATE;	// starting sampling rate: 192000
 const int EXTIO_NS = 1024;						// samples exchanged on each callback invocation
 
 //typedef ExtioHpsdrRadio <EXTIO_BASE_TYPE> ExtioHpsdrRadioT;

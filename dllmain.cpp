@@ -40,7 +40,7 @@ void Dll::dec()
 
 HMODULE Dll::getMyHandle() { return hMod; }
 int Dll::getInstanceNumber () { return local_instance; }
-
+int Dll::getInstanceQuantity () { return instance_; }
 
 static Dll *pObj = 0;
 
@@ -103,39 +103,7 @@ int GetInstanceNumber ()
 	return pObj->getInstanceNumber(); 
 }
 
-#if 0
-
-BOOL APIENTRY DllMain ( HMODULE hModule, DWORD ul_reason_for_call, LPVOID /* lpReserved */ )
+int GetInstanceQuantity ( )
 {
-	switch (ul_reason_for_call)
-	{
-	case DLL_PROCESS_ATTACH:
-		hMod = hModule;
-		instance_ = instance_ + 1;
-		local_instance = instance_;
-		// initialize Windows sockets
-		{
-			WORD wVersionRequested;
-			WSADATA wsaData;
-			int err;
-
-			wVersionRequested = MAKEWORD(1, 1);
-			err = WSAStartup(wVersionRequested, &wsaData);
-		}
-		break;
-
-	case DLL_THREAD_ATTACH:
-	case DLL_THREAD_DETACH:
-	case DLL_PROCESS_DETACH:
-		break;
-	}
-	return TRUE;
+	return pObj->getInstanceQuantity ();
 }
-
-HMODULE GetMyHandle()
-{ return hMod; }
-
-int GetInstanceNumber ()
-{ return local_instance; }
-
-#endif

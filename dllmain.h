@@ -44,6 +44,7 @@ public:
 
 	HMODULE getMyHandle();
 	int getInstanceNumber ();
+	int getInstanceQuantity () ;
 
 	Dll() = delete;
 	Dll(const Dll&) = delete;
@@ -56,6 +57,7 @@ private:
 
 HMODULE GetMyHandle();
 int GetInstanceNumber ();
+int GetInstanceQuantity () ;
 
 Dll *createDll (HMODULE); // forward declaration, to be defined using DLL_CLASS macro
 

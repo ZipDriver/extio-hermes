@@ -378,39 +378,9 @@ void Gui::EnableAll (const GuiEvent& ev1, const GuiEvent& ev2)
 	::EnumChildWindows(ev1.hWnd, GuiImpl::MyEnumWindowsProc, (LPARAM)&ev2);
 }
 
-#if 0
-/**
- *  Crude factory methods
- */
-
-Gui * Gui::Create(const char *board_id, int sr)
-{
-	if (board_id && sr) {
-		if (strcmp(board_id, "Mercury") == 0 || strcmp(board_id, "Metis") == 0) {
-			return new MercuryGui(sr);
-		} else
-		if (strcmp(board_id, "Hermes") == 0) {
-			return new HermesGui(sr);
-		}
-	}
-	return 0;
-}
-
-Gui * Gui::Create(Radio *pR, int sr)
-{
-	if (pR && sr) {
-		if (dynamic_cast<Mercury *>(pR))
-			return new MercuryGui(sr);
-		else
-		if (dynamic_cast<Hermes *>(pR))
-			return new HermesGui(sr);
-	}
-	return 0;
-}
-#endif
 
 /*
- * H E R ME S   Gui
+ * H E R M E S   Gui
  *
  *
  */ 
@@ -631,9 +601,20 @@ bool MercuryGui::OnInit(const GuiEvent& ev)
 	}
 	CheckRadioButton(ev.hWnd, IDC_ALEX_FILTER_AUTO, IDC_ALEX_FILTER_AUTO, IDC_ALEX_FILTER_AUTO);
 
+	// default to Antenna 1
+	CheckRadioButton(ev.hWnd, IDC_ANT_1, IDC_ANT_3, IDC_ANT_1 );
+	                       
+	// disable all controls
 	EnableAll(ev, GuiEvent(0, false));
+	
+	// enable receivers selection
 	EnableAll(ev, GuiEvent(GetDlgItem(ev.hWnd, IDC_COMBO_N_RX), true));
-
+	// enable bandwidth selection
+	EnableAll(ev, GuiEvent(GetDlgItem(ev.hWnd, IDC_RADIO_BW_384K), true));	
+	EnableAll(ev, GuiEvent(GetDlgItem(ev.hWnd, IDC_RADIO_BW_192K), true));	
+	EnableAll(ev, GuiEvent(GetDlgItem(ev.hWnd, IDC_RADIO_BW_96K), true));	
+	EnableAll(ev, GuiEvent(GetDlgItem(ev.hWnd, IDC_RADIO_BW_48K), true));	
+	
 	AppendWinTitle(GuiEvent(pi->hDialog, 0), buildString);
 
 	return true;
@@ -646,6 +627,11 @@ bool MercuryGui::ButtonClick(const GuiEvent &ev)
 	// GuiEvent ev object contains the handle of dialog and the id of control that has been clicked
 
 	if (ev.id >= IDC_RADIO_BW_384K && ev.id <= IDC_RADIO_BW_48K)  {
+		if ( GetInstanceQuantity () != 1 ) {
+			EnableControls ();
+			return false;
+		}
+
 		CheckRadioButton(ev.hWnd, IDC_RADIO_BW_384K, IDC_RADIO_BW_48K, ev.id);
 		switch (ev.id) {
 		case IDC_RADIO_BW_384K:
@@ -721,7 +707,6 @@ bool MercuryGui::ButtonClick(const GuiEvent &ev)
 			AppendTextToEditCtrl(GuiEvent(ev.hWnd, IDC_MSG_PANE), "HIGH PASS: 20 MHz\r\n");
 			(pi->pr)->setHP(AlexFilter::HighPass::_20M);
 			break;
-
 		case IDC_ALEX_HP_9_5MHZ:
 			AppendTextToEditCtrl(GuiEvent(ev.hWnd, IDC_MSG_PANE), "HIGH PASS: 9.5 MHz\r\n");
 			(pi->pr)->setHP(AlexFilter::HighPass::_9_5M);
@@ -785,20 +770,55 @@ bool MercuryGui::ButtonClick(const GuiEvent &ev)
 		}
 		AppendTextToEditCtrl(GuiEvent(ev.hWnd, IDC_MSG_PANE), pszState);
 	}
+	
+	if (ev.id >= IDC_ANT_1 && ev.id <= IDC_ANT_3) {
+		CheckRadioButton(ev.hWnd, IDC_ANT_1, IDC_ANT_3, ev.id);
+		switch (ev.id) {
+		case IDC_ANT_1:
+			AppendTextToEditCtrl(GuiEvent(ev.hWnd, IDC_MSG_PANE), "Tx Antenna: 1\r\n");
+			(pi->pr)->setTxAnt(0);
+			break;
+		case IDC_ANT_2:
+			AppendTextToEditCtrl(GuiEvent(ev.hWnd, IDC_MSG_PANE), "Tx Antenna: 2\r\n");
+			(pi->pr)->setTxAnt(1);
+			break;
+		case IDC_ANT_3:
+			AppendTextToEditCtrl(GuiEvent(ev.hWnd, IDC_MSG_PANE), "Tx Antenna: 3\r\n");
+			(pi->pr)->setTxAnt(2);
+			break;			
+		}
+	}
 	return true;
 }
 
 void MercuryGui::EnableControls()
 {
-	EnableAll(GuiEvent(pi->hDialog, 0), GuiEvent(0, true));
-	EnableAll(GuiEvent(pi->hDialog,0), GuiEvent(GetDlgItem(pi->hDialog, IDC_COMBO_N_RX), false));
+	GuiEvent ev(pi->hDialog, 0);
+	
+	EnableAll(ev, GuiEvent(0, true));
+	EnableAll(ev, GuiEvent(GetDlgItem(pi->hDialog, IDC_COMBO_N_RX), false));
+	
+	if ( GetInstanceQuantity () != 1 ) {
+		// disable bandwidth selection
+		EnableAll(ev, GuiEvent(GetDlgItem(ev.hWnd, IDC_RADIO_BW_384K), false));	
+		EnableAll(ev, GuiEvent(GetDlgItem(ev.hWnd, IDC_RADIO_BW_192K), false));	
+		EnableAll(ev, GuiEvent(GetDlgItem(ev.hWnd, IDC_RADIO_BW_96K), false));	
+		EnableAll(ev, GuiEvent(GetDlgItem(ev.hWnd, IDC_RADIO_BW_48K), false));	
+	}
 	Gui::Show();
 }
 
 void MercuryGui::DisableControls()
 {
-	EnableAll(GuiEvent(pi->hDialog, 0), GuiEvent(0, false));
-	EnableAll(GuiEvent(pi->hDialog, 0), GuiEvent(GetDlgItem(pi->hDialog, IDC_COMBO_N_RX), true));
+	GuiEvent ev(pi->hDialog, 0);
+	
+	EnableAll(ev, GuiEvent(0, false));
+	EnableAll(ev, GuiEvent(GetDlgItem(pi->hDialog, IDC_COMBO_N_RX), true));
+	// enable bandwidth selection
+	EnableAll(ev, GuiEvent(GetDlgItem(ev.hWnd, IDC_RADIO_BW_384K), true));	
+	EnableAll(ev, GuiEvent(GetDlgItem(ev.hWnd, IDC_RADIO_BW_192K), true));	
+	EnableAll(ev, GuiEvent(GetDlgItem(ev.hWnd, IDC_RADIO_BW_96K), true));	
+	EnableAll(ev, GuiEvent(GetDlgItem(ev.hWnd, IDC_RADIO_BW_48K), true));	
 	Gui::Show();
 }
 

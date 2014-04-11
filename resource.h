@@ -21,8 +21,8 @@
 #define IDD_MERCURY                             4000
 #define IDC_GROUP_7                             40000
 #define IDC_ANT_1                               40001
-#define IDC_ANT_3                               40002
-#define IDC_ANT_2                               40003
+#define IDC_ANT_2                               40002
+#define IDC_ANT_3                               40003
 #define IDC_SPLSH_MSG_PANE                      40003
 #define IDC_GBOX_4                              40004
 #define IDC_RB_ALEX_LP_3020                     40005

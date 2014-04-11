@@ -1,8 +1,10 @@
 SRC=.
 TGT=.
-INCLUDES = -I.
-CXXFLAGS = -DNDEBUG -DFLOG -std=gnu++0x -DWINVER=0x502 -fpermissive $(INCLUDES)
-LDFLAGS = -static -static-libgcc -static-libstdc++ -Wl,-Bstatic -L. -lpthreadGC2 -lwsock32  -liphlpapi  -s -shared -Wl,--add-stdcall-alias,--subsystem,windows
+INCLUDES = -I. -I../pthreads
+CXXFLAGS = -DNDEBUG -DFLOG -DPTW32_STATIC_LIB -D__CLEANUP_CXX -std=gnu++0x -DWINVER=0x502 -fpermissive $(INCLUDES)
+LDFLAGS = -static -static-libgcc -static-libstdc++ -Wl,-Bstatic  -lws2_32  -liphlpapi -L../pthreads -lpthreadGC2 -s -shared -Wl,--add-stdcall-alias,--subsystem,windows
+
+
 DLL = Extio_hpsdr_mgw.dll
 
 SOURCES = $(wildcard $(SRC)/*.cpp)
