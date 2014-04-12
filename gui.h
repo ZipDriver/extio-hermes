@@ -102,11 +102,11 @@ private:
 	int sr;
 };
 
-
+class CommandReceiver;
 
 class HpsdrSplash: public Gui, public ScanWatcher {
 public:
-	HpsdrSplash(Gui **p);
+	HpsdrSplash(Gui **pG, CommandReceiver **pCr);
 	~HpsdrSplash() {}
 	void Show();
 
@@ -128,7 +128,24 @@ public:
 private:
 	int sel;
 	Gui **ppGui_;
+	CommandReceiver **ppCr_;
 	Ethernet::Device *pDev;
 };
 
+class CommandReceiver: public Gui {
+public:
+	CommandReceiver ();
+	~CommandReceiver ();
+	virtual bool OnInit(const GuiEvent& ev);
+	
+	void SendOtherInstancesNewSampleRate (unsigned int nsr);
+	void SendOtherInstancesStart ();
+	void SendOtherInstancesStop ();
+	void SendOtherInstancesHWLO(long freq);
+
+	virtual bool OnWmUser(int n, const GuiEvent& ev);
+
+protected:
+	
+};
 #endif

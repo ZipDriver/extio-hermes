@@ -4,6 +4,7 @@ SECTIONS
 	.SS_DLLMAIN			READ WRITE SHARED
 	.SS_EXTIO_HERMES	READ WRITE SHARED
 	.SS_HPSDR			READ WRITE SHARED
+	.SS_GUI				READ WRITE SHARED
 ;
 ; Excerpted from "Winrad ‐ specifications for the external I/O DLL" by Alberto I2PHD
 ;

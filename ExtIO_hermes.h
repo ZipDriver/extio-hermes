@@ -10,6 +10,7 @@
 // type for Extio callback, used for signallingof data and events to main program
 typedef  void (* EXTIO_RX_CALLBACK) (int, int, float, int *) ;
 
+extern EXTIO_RX_CALLBACK ExtioCallback ;
 
 
 #include "intradllcomm.h"
@@ -111,12 +112,19 @@ public:
 };
 
 class Gui;
+class CommandReceiver;
 
 template <typename ST>
 class ExtioHpsdrRadio : public ExtioDataConversion<ST>
 {
 public:
-	ExtioHpsdrRadio(int ns, Radio *p, EXTIO_RX_CALLBACK *pCb) : ExtioDataConversion<ST>(ns), cnt(0), pidc(0), pR_(p), pExtioCallback(pCb)
+	ExtioHpsdrRadio(int ns, Radio *p, EXTIO_RX_CALLBACK *pCb, CommandReceiver *pCmdRec): 
+		ExtioDataConversion<ST>(ns), 
+		cnt(0), 
+		pidc(0), 
+		pR_(p), 
+		pCr_(pCmdRec),
+		pExtioCallback(pCb)
 	{  }
 
 	virtual ~ExtioHpsdrRadio() {}
@@ -142,7 +150,8 @@ public:
 		return 0;
 	}
 
-	void setSampleRateHW(int new_sr)
+	void setSampleRateHW(int new_sr);
+	#if 0
 	{
 		pR_->setSampleRate(new_sr);
 
@@ -153,8 +162,13 @@ public:
 		the GetHWSR() API to know the new sampling rate.
 		We are calling the callback only for the first instance (otherwise Studio 1 is looping on Start/Stop cycle - TBI).
 		*/
-		if (*pExtioCallback && (::GetInstanceNumber()==1)) (*pExtioCallback) (-1, 100, 0., 0);
+		if (*pExtioCallback && (::GetInstanceNumber()==1)) {
+			LOGT("new sample rate: %d\n", new_sr);
+			(*pExtioCallback) (-1, 100, 0., 0);
+			pCr_->SendOtherInstancesNewSampleRate (new_sr);
+		}
 	}
+	#endif
 	Radio * getRadio() { return pR_; }
 
 	virtual Gui *CreateGui(int sr) = 0;
@@ -163,6 +177,7 @@ protected:
 	IntraComm *pidc;
 	int cnt;
 	Radio *pR_;
+	CommandReceiver *pCr_;
 	EXTIO_RX_CALLBACK *pExtioCallback;
 };
 
@@ -170,7 +185,8 @@ template < typename ST >
 class ExtioMercuryRadio : public Mercury, public ExtioHpsdrRadio<ST>
 {
 public:
-	ExtioMercuryRadio(int ns, EXTIO_RX_CALLBACK *pCb) : Mercury(), ExtioHpsdrRadio<ST>(ns, this, pCb)
+	ExtioMercuryRadio(int ns, EXTIO_RX_CALLBACK *pCb, CommandReceiver *pCr): 
+		Mercury(), ExtioHpsdrRadio<ST>(ns, this, pCb, pCr)
 	{  }
 
 	Gui *CreateGui(int sr);
@@ -191,7 +207,8 @@ template < typename ST >
 class ExtioHermesRadio : public Hermes, public ExtioHpsdrRadio<ST>
 {
 public:
-	ExtioHermesRadio(int ns, EXTIO_RX_CALLBACK *pCb) : Hermes(), ExtioHpsdrRadio<ST>(ns, this, pCb)
+	ExtioHermesRadio(int ns, EXTIO_RX_CALLBACK *pCb, CommandReceiver *pCr):
+		Hermes(), ExtioHpsdrRadio<ST>(ns, this, pCb, pCr)
 	{  }
 
 	Gui *CreateGui(int sr);
@@ -231,22 +248,22 @@ template <
 >
 struct RadioFactory {
 
-	ExtioHpsdrRadio<EXTIO_BASE_TYPE> *Create(const char *board_id, unsigned char *buf, EXTIO_RX_CALLBACK *pCb)
+	ExtioHpsdrRadio<EXTIO_BASE_TYPE> *Create(const char *board_id, unsigned char *buf, EXTIO_RX_CALLBACK *pCb, CommandReceiver *pCr)
 	{
 		ExtioHpsdrRadio<EXTIO_BASE_TYPE> *pExr = 0;
 		// decides at run time which HW we have 
 		// placement new used, in order to share it among all instances
 		if (strcmp(board_id, "Mercury") == 0 || strcmp(board_id, "Metis") == 0) {
-			pExr = new (buf)ExtioMercuryRadio < EXTIO_BASE_TYPE >(EXTIO_NS, pCb);
+			pExr = new (buf)ExtioMercuryRadio < EXTIO_BASE_TYPE >(EXTIO_NS, pCb, pCr);
 		}
 		else
 		if (strcmp(board_id, "Hermes") == 0) {
-			pExr = new (buf)ExtioHermesRadio < EXTIO_BASE_TYPE >(EXTIO_NS, pCb);
+			pExr = new (buf)ExtioHermesRadio < EXTIO_BASE_TYPE >(EXTIO_NS, pCb, pCr);
 		}
 		return pExr;
 	}
 
-	ExtioHpsdrRadio<EXTIO_BASE_TYPE> *Pointer(const char *board_id, unsigned char *buf)
+	ExtioHpsdrRadio<EXTIO_BASE_TYPE> *Pointer(const char *board_id, unsigned char *buf, CommandReceiver *pCr)
 	{
 		ExtioHpsdrRadio<EXTIO_BASE_TYPE> *pExr = 0;
 		// decides at run time which HW we have 
@@ -266,6 +283,6 @@ struct RadioFactory {
 template <
 	typename EXTIO_BASE_TYPE
 >
-ExtioHpsdrRadio<EXTIO_BASE_TYPE> * CreateExtioHpsdrRadio(const char *board_id);
+ExtioHpsdrRadio<EXTIO_BASE_TYPE> * CreateExtioHpsdrRadio(const char *board_id, CommandReceiver *);
 
 #endif

@@ -603,7 +603,7 @@ bool MercuryGui::OnInit(const GuiEvent& ev)
 
 	// default to Antenna 1
 	CheckRadioButton(ev.hWnd, IDC_ANT_1, IDC_ANT_3, IDC_ANT_1 );
-	                       
+
 	// disable all controls
 	EnableAll(ev, GuiEvent(0, false));
 	
@@ -627,11 +627,6 @@ bool MercuryGui::ButtonClick(const GuiEvent &ev)
 	// GuiEvent ev object contains the handle of dialog and the id of control that has been clicked
 
 	if (ev.id >= IDC_RADIO_BW_384K && ev.id <= IDC_RADIO_BW_48K)  {
-		if ( GetInstanceQuantity () != 1 ) {
-			EnableControls ();
-			return false;
-		}
-
 		CheckRadioButton(ev.hWnd, IDC_RADIO_BW_384K, IDC_RADIO_BW_48K, ev.id);
 		switch (ev.id) {
 		case IDC_RADIO_BW_384K:
@@ -798,13 +793,6 @@ void MercuryGui::EnableControls()
 	EnableAll(ev, GuiEvent(0, true));
 	EnableAll(ev, GuiEvent(GetDlgItem(pi->hDialog, IDC_COMBO_N_RX), false));
 	
-	if ( GetInstanceQuantity () != 1 ) {
-		// disable bandwidth selection
-		EnableAll(ev, GuiEvent(GetDlgItem(ev.hWnd, IDC_RADIO_BW_384K), false));	
-		EnableAll(ev, GuiEvent(GetDlgItem(ev.hWnd, IDC_RADIO_BW_192K), false));	
-		EnableAll(ev, GuiEvent(GetDlgItem(ev.hWnd, IDC_RADIO_BW_96K), false));	
-		EnableAll(ev, GuiEvent(GetDlgItem(ev.hWnd, IDC_RADIO_BW_48K), false));	
-	}
 	Gui::Show();
 }
 
@@ -897,7 +885,7 @@ bool HpsdrSplash::ListBoxDoubleClick(const GuiEvent &ev)
 			if (!(pi->pExr)) {
 
 				// Create Radio
-				pi->pExr = CreateExtioHpsdrRadio<EXTIO_BASE_TYPE>(pDev->board_id);
+				pi->pExr = CreateExtioHpsdrRadio<EXTIO_BASE_TYPE>(pDev->board_id, *(ppCr_));
 
 				if (! (pi->pExr)) {
 					GuiError("Hardware unsupported, unable to start receiver !").show();
@@ -948,7 +936,8 @@ bool HpsdrSplash::OnWmUser(int n, const GuiEvent& ev)
 
 
 
-HpsdrSplash::HpsdrSplash(Gui **p) : Gui(IDD_SPLASH_DIALOG), sel(-1), ppGui_(p), pDev(0)
+HpsdrSplash::HpsdrSplash(Gui **p, CommandReceiver **ppCr):
+	Gui(IDD_SPLASH_DIALOG), sel(-1), ppGui_(p), ppCr_(ppCr), pDev(0)
 {
 	OnInit(GuiEvent(pi->hDialog, -1));
 }
@@ -1018,8 +1007,134 @@ void HpsdrSplash::Show()
 }
 
 
+//
+// Command receiver Globals
+//
+
+#pragma data_seg (".SS_GUI")
+
+// !!!! have to be initialized vars, due to shared segments rules constraints
+HWND hCmdRec[10] SHARED = { 0 };
+
+#pragma data_seg ()
 
 
 
+CommandReceiver :: CommandReceiver ():  Gui(IDD_CMD_RECEIVER)
+{
+	LOGT("********************************* pImpl: %p CmdReceiver addr: %p\n", pi, this);
+	if (pi && pi->hDialog) OnInit(GuiEvent(pi->hDialog, -1));
+}
 
 
+CommandReceiver :: ~CommandReceiver ()
+{
+	LOGT("********************************* Command Receiver destructor: obj addr: %p\n", pi);
+	unsigned int n = GetInstanceNumber () - 1;  // change to a proper array index
+	
+	if ( n < ARRAY_SIZE(hCmdRec) ){
+		hCmdRec [n] = 0;
+	}
+
+}
+
+bool CommandReceiver::OnInit(const GuiEvent& ev)
+{
+	AppendWinTitle(GuiEvent(pi->hDialog, 0), buildString);
+	unsigned int n = GetInstanceNumber () - 1;  // change to a proper array index
+	
+	if ( n < ARRAY_SIZE(hCmdRec) ){
+		LOGT("********************************* Command Receiver OnInit: obj addr: %p, instance#: %d - %p\n", pi, n, pi->hDialog);
+		hCmdRec [n] = pi->hDialog;
+	}
+	return true;
+}
+
+void CommandReceiver :: SendOtherInstancesNewSampleRate (unsigned int nsr)
+{
+	unsigned int n = GetInstanceNumber () - 1; // change to a proper array index
+	
+	for (unsigned int i=0; i < ARRAY_SIZE(hCmdRec); ++i ) {
+		if (i != n && hCmdRec[i]) {
+			LOGT("Sending new sample rate: %d to instance %d +1\n", nsr, i);
+			PostMessage (hCmdRec[i], WM_USER+1, reinterpret_cast<WPARAM>(nsr), static_cast<LPARAM>(0));
+		}
+	}
+}
+
+void CommandReceiver :: SendOtherInstancesStart (void)
+{
+	unsigned int n = GetInstanceNumber () - 1; // change to a proper array index
+	
+	for (unsigned int i=0; i < ARRAY_SIZE(hCmdRec); ++i ) {
+		if (i != n && hCmdRec[i]) {
+			LOGT("Sending START to instance %d +1\n", i);
+			PostMessage (hCmdRec[i], WM_USER+2, static_cast<WPARAM>(0), static_cast<LPARAM>(0));
+		}
+	}
+}
+
+void CommandReceiver :: SendOtherInstancesStop (void)
+{
+	unsigned int n = GetInstanceNumber () - 1; // change to a proper array index
+	
+	for (unsigned int i=0; i < ARRAY_SIZE(hCmdRec); ++i ) {
+		if (i != n && hCmdRec[i]) {
+			LOGT("Sending STOP to instance %d +1\n", i);
+			PostMessage (hCmdRec[i], WM_USER+3, static_cast<WPARAM>(0), static_cast<LPARAM>(0));
+		}
+	}
+}
+
+void CommandReceiver :: SendOtherInstancesHWLO(long freq) 
+{
+	unsigned int n = GetInstanceNumber () - 1; // change to a proper array index
+	
+	for (unsigned int i=0; i < ARRAY_SIZE(hCmdRec); ++i ) {
+		if (i != n && hCmdRec[i]) {
+			LOGT("Sending new HWLO: %d to instance %d +1\n", freq, i);
+			PostMessage (hCmdRec[i], WM_USER+4, static_cast<WPARAM>(freq), static_cast<LPARAM>(0));
+		}
+	}
+}
+
+bool CommandReceiver::OnWmUser(int n, const GuiEvent& ev)
+{
+	if (n == 1)	{
+		LOGT("********************************* Command Receiver WM_USER + %d Change Sample rate: obj addr: %p\n", n, pi);
+		int nsr = ev.id;
+		LOGT("New sample rate received: %d\n", nsr);
+		if (::GetInstanceNumber() != 1) {
+			LOGT("new sample rate: %d\n", nsr);
+			(*ExtioCallback) (-1, 100, 0., 0);
+		}
+		return true;
+	} else
+	if (n == 2)	{
+		LOGT("********************************* Command Receiver WM_USER + %d START: obj addr: %p\n", n, pi);
+		if (::GetInstanceNumber() != 1) {
+			LOGT("%s\n", "START");
+			(*ExtioCallback) (-1, 107, 0., 0);
+		}
+		return true;
+	} else
+	if (n == 3)	{
+		LOGT("********************************* Command Receiver WM_USER + %d STOP: obj addr: %p\n", n, pi);
+		if (::GetInstanceNumber() != 1) {
+			LOGT("%s\n", "STOP");
+			(*ExtioCallback) (-1, 108, 0., 0);
+		}
+		return true;
+	} else
+	if (n == 4)	{
+		LOGT("********************************* Command Receiver WM_USER + %d HWLO: obj addr: %p\n", n, pi);
+		long freq = ev.id;
+		LOGT("HWLO command received: %d\n", freq);
+		if (::GetInstanceNumber() != 1) {
+			LOGT("new Hardware Local Oscillator: %d\n", freq);
+			(*ExtioCallback) (-1, 101, 0., 0);
+		}
+		return true;
+	} else
+		return false;
+}

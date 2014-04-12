@@ -4,6 +4,7 @@
 
 #define IDD_SPLASH_DIALOG                       101
 #define IDB_BITMAP1                             102
+#define IDD_CMD_RECEIVER                        104
 #define IDC_STATIC_HW                           1002
 #define IDD_HERMES                              3000
 #define IDC_MSG_PANE                            3005

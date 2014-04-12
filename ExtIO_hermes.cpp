@@ -110,6 +110,24 @@ void ExtioEthernet::TransmissionTmo(const char *pMsg)
 	}
 };
 
+template <typename ST>
+void ExtioHpsdrRadio<ST> :: setSampleRateHW(int new_sr)
+{
+	pR_->setSampleRate(new_sr);
+
+	/* 100
+		This status value indicates that a sampling frequency change has taken place,
+		either by a hardware action, or by an interaction of the user with the DLL GUI.
+		When the main program receives this status, it calls immediately after
+		the GetHWSR() API to know the new sampling rate.
+		We are calling the callback only for the first instance (otherwise Studio 1 is looping on Start/Stop cycle - TBI).
+	*/
+	if (*pExtioCallback && (::GetInstanceNumber()==1)) {
+		LOGT("new sample rate: %d\n", new_sr);
+		(*pExtioCallback) (-1, 100, 0., 0);
+		pCr_->SendOtherInstancesNewSampleRate (new_sr);
+	}
+}
 
 //
 // Globals
@@ -134,10 +152,10 @@ EXTIO_RX_CALLBACK ExtioCallback = 0;
 Radio  *pR = 0;
 ExtioHpsdrRadio < EXTIO_BASE_TYPE > *pExr = 0;
 Gui *pGui = 0;
+
 HpsdrSplash *pSplash = 0;
-
 ExtioEthernet *pExtioEth = 0;
-
+CommandReceiver *pCmdRec = 0;
 
 //
 // Radio Factory Helper
@@ -145,11 +163,11 @@ ExtioEthernet *pExtioEth = 0;
 template <
 	typename EXTIO_BASE_TYPE
 >
-ExtioHpsdrRadio<EXTIO_BASE_TYPE> * CreateExtioHpsdrRadio (const char *board_id)
+ExtioHpsdrRadio<EXTIO_BASE_TYPE> * CreateExtioHpsdrRadio (const char *board_id, CommandReceiver *pCr)
 {
 	RadioFactory<EXTIO_BASE_TYPE> rf;
 
-	return rf.Create(board_id, bufHR, &ExtioCallback);
+	return rf.Create(board_id, bufHR, &ExtioCallback, pCr);
 }
 
 //
@@ -159,7 +177,7 @@ pthread_t scan_thread_id;
 
 void *scan_dev_thread(void *p)
 {
-	HpsdrSplash *pSplash = (HpsdrSplash *)p; // create and start Splash screen
+	HpsdrSplash *pSplash = (HpsdrSplash *)p;
 
 	LOGT("%s\n", "Starting radio scan");
 
@@ -185,7 +203,9 @@ EXTIO_API bool __stdcall InitHW(char *name, char *model, int & extio_type)
 			first = false;
 			ExtioCallback = NULL;
 
-			pSplash = new HpsdrSplash(&pGui);
+			if (pCmdRec == 0) pCmdRec = new CommandReceiver();
+
+			pSplash = new HpsdrSplash(&pGui, &pCmdRec);
 
 			int rc = ::pthread_create(&scan_thread_id, NULL, scan_dev_thread, (void *)pSplash);
 			if (rc != 0) {
@@ -198,7 +218,7 @@ EXTIO_API bool __stdcall InitHW(char *name, char *model, int & extio_type)
 		}
 	}
 	strcpy(name, "HPSDR");
-	strcpy(model, "unknown" /*pDev->board_id */ );
+	strcpy(model, "unknown" );   // at this point scan is undergoing, so no answers available
 	return true;
 }
 
@@ -209,6 +229,9 @@ EXTIO_API bool __stdcall OpenHW()
 	if (GetInstanceNumber() == 1) {
 		if (pSplash) pSplash->Show();
 		if (pGui) pGui->Show();
+	} else {
+		// setup command receiver for instances > 1
+		if (pCmdRec == 0) pCmdRec = new CommandReceiver();
 	}
 	return true;
 }
@@ -244,11 +267,10 @@ EXTIO_API int __stdcall StartHW(long LOfrequency)
 					pR = pExr->getRadio();
 				} else {
 					// Create radio according to type discovered
-					pExr = CreateExtioHpsdrRadio<EXTIO_BASE_TYPE>(pDev->board_id);
+					pExr = CreateExtioHpsdrRadio<EXTIO_BASE_TYPE>(pDev->board_id, pCmdRec);
 
 					if (!pExr) {
 						GuiError("Hardware unsupported, unable to start receiver !").show();
-						//ShowError(msg);
 						return 0;
 					} else {
 						pR = pExr->getRadio(); // global pointer to Radio
@@ -286,15 +308,15 @@ EXTIO_API int __stdcall StartHW(long LOfrequency)
 
 		pR->setFrequency(LOfrequency); // establish the frequency
 
-	} else {
+	} else { // for instances > 1
 		pExtioEth = (ExtioEthernet *)bufHE;
 		pDev = pExtioEth->found();
+		
 		// point local hermes radio object pointer to shared buffer
 		RadioFactory<EXTIO_BASE_TYPE> rf;
-		pExr = rf.Pointer (pDev->board_id, bufHR);
+		pExr = rf.Pointer (pDev->board_id, bufHR, pCmdRec);
 		if (pExr) pR = pExr->getRadio();
 	}
-
 
 	//
 	// all instances, even the first one, have to prepare to receive data from the main one
@@ -338,7 +360,11 @@ EXTIO_API int __stdcall StartHW(long LOfrequency)
 			return 0;
 		}
 	}
-	
+	if (pCmdRec && (GetInstanceNumber() == 1)) {
+		LOGT("Sending start to other instances......%s\n", "-");
+		pCmdRec->SendOtherInstancesStart();
+	}
+
 	return EXTIO_NS; // # of samples returned by callback
 }
 
@@ -358,7 +384,8 @@ EXTIO_API void __stdcall StopHW()
 	if (GetInstanceNumber() == 1) {
 		pGui->appendMessage ("Hardware stopped by user request.\n");
 		pExtioEth->stopReceive ();
-		pGui->setHwAddressGUI(Ethernet::found(pSplash->GetSel())); // set the device pointer to gui
+		pGui->setHwAddressGUI(Ethernet::found(pSplash->GetSel()));
+		if (pCmdRec && (GetInstanceNumber() == 1)) pCmdRec->SendOtherInstancesStop();
 	}
 	return;
 }
@@ -368,6 +395,7 @@ EXTIO_API void __stdcall CloseHW()
 {
 	LOGT("Instance #%d\n", GetInstanceNumber());
 	if ( GetInstanceNumber() == 1 ) delete pGui, delete pSplash;
+	if (pCmdRec) delete pCmdRec;
 	LOG_CLOSE;
 	return;
 }
@@ -375,11 +403,12 @@ EXTIO_API void __stdcall CloseHW()
 extern "C"
 EXTIO_API int __stdcall SetHWLO(long freq)
 {
-	LOGT("Instance #%d freq: %d (%p)\n", GetInstanceNumber(), freq, pR);
+	LOGT("Instance #%d freq: %d (Radio *: 0x%p)\n", GetInstanceNumber(), freq, pR);
 	
 	if (freq < 10000) return -10000;
 	if (freq > 60000000) return 60000000;
 	if (pR) pR->setFrequency ( freq, GetInstanceNumber() - 1 ) ;
+	if (pCmdRec && (GetInstanceNumber() == 1)) pCmdRec->SendOtherInstancesHWLO(freq);
 	return 0;
 }
 
@@ -435,7 +464,7 @@ EXTIO_API void __stdcall HideGUI()
 	return;
 }
 
-#if 0
+#if 0 // not currently used not needed with HPSDR hardware
 extern "C"
 EXTIO_HERMES_API void __stdcall IFLimitsChanged (long low, long high)
 {
