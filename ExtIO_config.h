@@ -31,7 +31,7 @@ typedef ExtIOtype < 8, int24_hpsdr>	ExtIO_int_hpsdr;
 
 
 /*
-**	Extio base parametrs
+**	Extio base parameters
 **
 **
 **/
