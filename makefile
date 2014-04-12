@@ -25,7 +25,7 @@ $(TGT)/gui_rc.o:	$(SRC)/gui.rc
 $(TGT)/logw_rc.o:	$(SRC)/logw.rc
 	windres -i logw.rc -o logw_rc.o
 
-$(TGT)/%.o: $(SRC)/%.cpp
+$(TGT)/%.o: $(SRC)/%.cpp $(SRC)/%.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 	
