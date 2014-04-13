@@ -1098,6 +1098,18 @@ void CommandReceiver :: SendOtherInstancesHWLO(long freq)
 	}
 }
 
+void CommandReceiver :: SendOtherInstancesClose() 
+{
+	unsigned int n = GetInstanceNumber () - 1; // change to a proper array index
+	
+	for (unsigned int i=0; i < ARRAY_SIZE(hCmdRec); ++i ) {
+		if (i != n && hCmdRec[i]) {
+			LOGT("Sending CLOSE to instance %d +1\n", i);
+			PostMessage (hCmdRec[i], WM_USER+5, static_cast<WPARAM>(0), static_cast<LPARAM>(0));
+		}
+	}
+}
+
 bool CommandReceiver::OnWmUser(int n, const GuiEvent& ev)
 {
 	if (n == 1)	{
@@ -1136,5 +1148,14 @@ bool CommandReceiver::OnWmUser(int n, const GuiEvent& ev)
 		}
 		return true;
 	} else
+	if (n == 5)	{
+		LOGT("********************************* Command Receiver WM_USER + %d CLOSE: obj addr: %p\n", n, pi);
+		long freq = ev.id;
+		LOGT("CLOSE command received: %d\n", freq);
+		if (::GetInstanceNumber() != 1) {
+			PostMessage( GetAncestor( pi->hDialog, GA_ROOTOWNER), WM_QUIT, 0,0 );
+		}
+		return true;
+	} else	
 		return false;
 }

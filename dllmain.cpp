@@ -72,6 +72,7 @@ BOOL APIENTRY DllMain ( HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpRese
 		if (pObj) {
 			pObj->ProcessDetach ();
 			pObj->dec();
+			LOG_CLOSE;
 			delete pObj;
 			pObj = 0;
 #if !defined NDEBUG && (defined _MSC_VER || defined __MINGW32__)

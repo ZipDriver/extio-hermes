@@ -394,9 +394,10 @@ extern "C"
 EXTIO_API void __stdcall CloseHW()
 {
 	LOGT("Instance #%d\n", GetInstanceNumber());
+	if (pCmdRec && (GetInstanceNumber() == 1)) pCmdRec->SendOtherInstancesClose();
 	if ( GetInstanceNumber() == 1 ) delete pGui, delete pSplash;
 	if (pCmdRec) delete pCmdRec;
-	LOG_CLOSE;
+	//LOG_CLOSE; moved in dllmain.cpp
 	return;
 }
 
