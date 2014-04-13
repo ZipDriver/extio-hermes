@@ -1085,7 +1085,7 @@ void CommandReceiver :: SendOtherInstancesStop (void)
 		}
 	}
 }
-
+#if 0
 void CommandReceiver :: SendOtherInstancesHWLO(long freq) 
 {
 	unsigned int n = GetInstanceNumber () - 1; // change to a proper array index
@@ -1097,7 +1097,7 @@ void CommandReceiver :: SendOtherInstancesHWLO(long freq)
 		}
 	}
 }
-
+#endif
 void CommandReceiver :: SendOtherInstancesClose() 
 {
 	unsigned int n = GetInstanceNumber () - 1; // change to a proper array index

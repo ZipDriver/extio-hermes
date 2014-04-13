@@ -409,7 +409,7 @@ EXTIO_API int __stdcall SetHWLO(long freq)
 	if (freq < 10000) return -10000;
 	if (freq > 60000000) return 60000000;
 	if (pR) pR->setFrequency ( freq, GetInstanceNumber() - 1 ) ;
-	if (pCmdRec && (GetInstanceNumber() == 1)) pCmdRec->SendOtherInstancesHWLO(freq);
+	//if (pCmdRec && (GetInstanceNumber() == 1)) pCmdRec->SendOtherInstancesHWLO(freq);
 	return 0;
 }
 

@@ -141,7 +141,7 @@ public:
 	void SendOtherInstancesNewSampleRate (unsigned int nsr);
 	void SendOtherInstancesStart ();
 	void SendOtherInstancesStop ();
-	void SendOtherInstancesHWLO(long freq);
+	//void SendOtherInstancesHWLO(long freq);
 	void SendOtherInstancesClose ();
 
 	virtual bool OnWmUser(int n, const GuiEvent& ev);
