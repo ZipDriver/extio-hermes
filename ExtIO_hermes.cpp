@@ -137,7 +137,7 @@ DLL_CLASS(ExtIODll, hModule)
 #pragma data_seg (".SS_EXTIO_HERMES")
 
 // !!!! have to be initialized vars, due to shared segments rules constraints
-unsigned char bufHR[ MAX(sizeof(ExtioMercuryRadio < EXTIO_BASE_TYPE>), sizeof(ExtioMercuryRadio < EXTIO_BASE_TYPE >)) ] SHARED = { 0 };
+unsigned char bufHR[ MAX(sizeof(ExtioMercuryRadio < EXTIO_BASE_TYPE>), sizeof(ExtioHermesRadio < EXTIO_BASE_TYPE >)) ] SHARED = { 0 };
 char bufHE [sizeof(ExtioEthernet)]	SHARED = { 0 };
 
 #pragma data_seg ()
