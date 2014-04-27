@@ -21,11 +21,19 @@ IntraComm :: IntraComm ()
 			LOGT("create socket failed for iqSocket #%d: %s\n", i, strerror(errno) );
 		}
 
+		#if _WIN32
 		struct sockaddr_in daddr;
 		memset(&daddr, 0, sizeof(daddr));
 		daddr.sin_family		= AF_INET;
 		daddr.sin_addr.s_addr	= inet_addr ("127.0.0.1");
 		daddr.sin_port			= htons (portBase+i);
+		#else
+		struct sockaddr_un daddr;
+		memset(&daddr, 0, sizeof(daddr));
+		daddr.sin_family		= AF_UNIX;
+		snprintf(daddr.sun_path, UNIX_PATH_MAX, "./extio_hpsdr_socket");
+		daddr.sin_port			= htons (portBase+i);
+		#endif
 
 		if ( connect (iqSocket[i], (struct sockaddr*) &daddr, sizeof(daddr)) < 0) {
 			LOGT("connect socket failed for iqSocket #%d: %s\n", i, strerror(errno));
@@ -74,13 +82,19 @@ int IntraComm :: startReceive ()
     int reuse = 1;
     setsockopt(ss, SOL_SOCKET, SO_REUSEADDR, (const char *)&reuse, sizeof(reuse));
 
+	#if _WIN32
 	struct sockaddr_in addr;
-    
 	memset (&addr, 0, sizeof(addr));
     addr.sin_family       = AF_INET;
     addr.sin_addr.s_addr  = inet_addr ("127.0.0.1");
     addr.sin_port         = htons (portBase+channel);
-
+	#else
+	struct sockaddr_un addr;
+	memset(&addr, 0, sizeof(addr));
+	addr.sin_family		= AF_UNIX;
+	snprintf(addr.sun_path, UNIX_PATH_MAX, "./extio_hpsdr_socket");
+	addr.sin_port			= htons (portBase+channel);
+	#endif
     if (bind (ss, (struct sockaddr*)&addr, sizeof(addr)) < 0 ) {
         LOGT("bind socket failed for server IQ socket: %s\n", strerror(errno));
         return -1;

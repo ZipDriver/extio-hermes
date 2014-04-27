@@ -1,5 +1,5 @@
-ExtIO for Hermes receiver.
-==========================
+ExtIO for Hermes/Mercury receivers.
+===================================
 
 Andrea Montefusco - IW0HDV
 
@@ -8,31 +8,9 @@ Andrea Montefusco - IW0HDV
 1. Installation
 ---------------
 
-1.1 MinGW
----------
+The shared library (.dll file), as provided in 
 
-The shared library (.dll files), as provided in 
-
-	https://app.box.com/s/kyx03kram2aw0my6sb9h
-
-have to be copied in the same directory from which the Studio1/HDSDR executable 
-runs.
-
-
-1.2 MSVC
---------
-
-In order to use this DLL you have to install, as prerequisite, the runtime 
-for Microsoft Visual C++ 2013 available at
-
-	http://www.microsoft.com/en-us/download/details.aspx?id=40784
-
-Please select the proper release (vcredist_x64.exe or vcredist_x86.exe,
-respectively 64 bit or 32 bit), seconding your Windows system requirement.
-
-Next, the two shared libraries .dll extension files, as provided in 
-
-	https://app.box.com/s/zldc8md37actsb5kofhq
+	https://app.box.com/ExtioHpsdr
 
 have to be copied in the same directory from which the Studio1/HDSDR executable 
 runs.
@@ -41,7 +19,7 @@ runs.
 2. First run
 ------------
 
-Start Studio1, if the only ExtIO present into the the directory is the Hermes one, 
+Start Studio1/HDSDR, if the only ExtIO present into the the directory is the Hpsdr one, 
 it is automatically selected.
 Next the search thread for the radio hardware is started: a splash screen is shown and all
 the network interfaces probed are listed.
@@ -54,19 +32,19 @@ a) double click on one of radio hardware listed: the specific radio's control pa
    
 b) press Start on Studio1//HDSDR GUI: the first receiver found is immediately activated.
 
-Option a) is useful to select (before Start on Studio1/HDSDRis pressed) the 
-number of receiver that will be used.
+Option a) is useful to select (before Start on Studio1/HDSDR is pressed) the 
+number of receiver that will be activated.
 
 
 3. How to run multiple instances of Studio 1
 --------------------------------------------
 
-In order to exploit the multi receiver capabilities of Hermes receiver, 
+In order to exploit the multi receiver capabilities of Hermes/Mercury receivers, 
 start the first instance: after that select the maximum number of receiver
 you want to use (drop box).
 In order to activate further receivers, start more instances of Studio1 
 and setup them as you prefer.
-If the an instance, after the first, is not started, stop all the Studio1 instances and 
+If an instance, after the first, is not started, stop all the Studio1 instances and 
 delete the Studio1 registry offending instance with the following command:
 
    reg DELETE HKEY_CURRENT_USER\Software\SDR_Applications\Studio1\1.0\AppInst_2
@@ -78,6 +56,8 @@ in the above example, the instance delete is the third.
 ------------------------------------
 
 At the moment it is not feasible to use the Hermes transmitter with this DLL.
+If and when the Extio specifications will be upgraded, encompassing even the TX
+option, I will improve the code.
 
 
 5. How to compile on Windows
@@ -105,11 +85,12 @@ end with directory called like that
 extio-hermes-xxxxxx
 
 where the "xxxxxx" is master or the branch name that you selected.
-Please note that using the git client, whilst is perfectly feasible
+Please note that, using the git client on Windows, whilst is perfectly feasible
 both via CLI and GUI, is not mandatory, neither advisable, 
-unless you want to contribute.
-Moreover, the makefile assumes that pthreads library has been installed and compiled
-in a directory at the same level; if not, change INCLUDES macro accordingly.
+unless you want to contribute to develop the code.
+Moreover, take care that the makefile assumes that pthreads library has been installed and compiled
+in a directory at the same level of the sources one; if not, change INCLUDES macro in makefile 
+accordingly to your local setup.
 
 
 5.4) open the MinGW (MSYS) shell, make the sources directory current and type
@@ -120,10 +101,18 @@ if the process ends correctly, you should find the Extio_hpsdr_mgw.dll file
 in the same directory.
 The makefile even copy the dll in some predefined directory: that couldn't be so right
 in your system, so, depending on which SDR software do you want to use
-and  where you installed it, you could have to copy manually the dll.
+and  where you installed it, you could have to copy manually the dll and/or change
+the makefile.
 
 
-6. Please act according to GPLv3 license
+6. How to signal bug/defect/suggest improvements
+------------------------------------------------
+
+If you find a bug, please create an issue in GitHub. I will automatically receive a notice.
+
+
+
+7. Please act according to GPLv3 license
 ----------------------------------------
 
 If you redistribute a binary package, please do that accordingly to the license.
@@ -133,7 +122,20 @@ If you want to contribute, signup in GitHub and ask me a write access to source 
 Or, if you prefer, send me your patches and I will add, mentioning your call/name.
 
 
+8. Acknowledgments
+------------------
 
+Many thanks to 
+
+Ken N9VV
+Mark NI0Z
+Beppe IK3VIG
+Vittorio IK4IRO
+Frank
+Light Coder
+Thomas
+
+for take time to test this code.
 
 
 
