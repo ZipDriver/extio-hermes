@@ -1,6 +1,7 @@
-#if !defined NDEBUG && (defined _MSC_VER || defined __MINGW32__)
-#define _CRTDBG_MAP_ALLOC
+
 #include <stdlib.h>
+#if !defined NDEBUG && (defined _MSC_VER)
+#define _CRTDBG_MAP_ALLOC
 #include <crtdbg.h>
 #endif
 
@@ -75,7 +76,7 @@ BOOL APIENTRY DllMain ( HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpRese
 			LOG_CLOSE;
 			delete pObj;
 			pObj = 0;
-#if !defined NDEBUG && (defined _MSC_VER || defined __MINGW32__)
+#if !defined NDEBUG && (defined _MSC_VER)
 			_CrtDumpMemoryLeaks();
 #endif
 		}

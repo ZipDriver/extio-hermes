@@ -73,8 +73,8 @@ bool GetCheckBoxState(const GuiEvent& ge)
 
 void AppendWinTitle(const GuiEvent& ge, const char *p)
 {
-	char szBuf[1024];
-	char szNew[2028];
+	char szBuf[1024] = {0};
+	char szNew[2028] = {0};
 	if (GetWindowText(ge.hWnd, szBuf, sizeof (szBuf)) > 0) {
 		snprintf(szNew, sizeof(szNew), "%s%s", szBuf, p);
 		SetWindowText(ge.hWnd, szNew);

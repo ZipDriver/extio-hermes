@@ -23,9 +23,9 @@
 * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 * 
 */
-#if !defined NDEBUG
-#define _CRTDBG_MAP_ALLOC
 #include <stdlib.h>
+#if !defined NDEBUG && defined _MSC_VER
+#define _CRTDBG_MAP_ALLOC
 #include <crtdbg.h>
 #endif
 
